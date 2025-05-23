@@ -1,0 +1,36 @@
+
+SMA_PERIOD_LONG = 200
+SMA_PERIOD_SHORT = 50
+SMA_PERIOD_FILTER = 10
+PROFIT_FACTOR = 0.1
+TP_MULTIPLE = 3
+SL_PERIOD = 40
+
+FORECAST_INCREMENT = 0.125
+
+ST_KEY = "stochastic"
+ATR_KEY = "atr"
+
+SMA_L_KEY = "sma_l"
+SMA_S_KEY = "sma_s"
+DBL_SM_KEY = "db_sm"
+TRIX_KEY = "trix"
+TRIX_SIGNAL_KEY = "trix_signal"
+TRIX_TREND_KEY = "trix_trend"
+
+DEFAULT_DBL_SM_PERIOD = 1
+DEFAULT_DBL_SM_1 = 5
+DEFAULT_DBL_SM_2 = 20
+
+TRIX_PERIOD = 15
+TRIX_SMOOTHING = 9
+
+PERIODS_IN_YEAR = {
+    "D": 256,
+    "H4": 256 * 6,
+    "H1": 256 * 24,
+    "M30": 256 * 24 * 2,
+    "M15": 256 * 24 * 4,
+    "M5": 256 * 24 * 12,
+    "M1": 256 * 24 * 60,
+}
