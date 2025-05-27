@@ -20,5 +20,5 @@ def get_net_trend(series: pd.Series, horizon, offset=5):
     df["trend"] = df.mean(axis=1)
     # set all the values inside column "trend" equal to 0 if the existing value is neither 1 or -1
     df.loc[~df['trend'].isin([1, -1]), 'trend'] = 0
-    # df['trend'] = df['trend'].replace(to_replace=0,value=np.nan).ffill()
-    return df["trend"]
+    df['trend_signal'] = df['trend'].replace(to_replace=0,value=np.nan).ffill()
+    return df["trend_signal"]

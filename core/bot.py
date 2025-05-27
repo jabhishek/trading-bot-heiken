@@ -7,7 +7,8 @@ import pandas as pd
 from typing_extensions import Callable
 
 from api.OandaApi import OandaApi
-from config.constants import SL_PERIOD, ATR_KEY, TP_MULTIPLE
+from config.constants import ATR_KEY, TP_MULTIPLE, HEIKEN_ASHI_STREAK, ATR_RISK_FILTER, SMA_PERIOD_LONG, \
+    SMA_PERIOD_SHORT
 from core.base_api import BaseAPI
 from core.candle_manager import CandleManager
 from core.log_wrapper import LogManager
@@ -84,24 +85,24 @@ def get_probable_stop_loss(direction, df, pipLocationPrecision):
 
 
 def check_new_trade_conditions(candles: pd.DataFrame, heikin_ashi: pd.DataFrame, instrument: InstrumentData,
-                               atr: float, pair_logger, trade_logger) -> Tuple[bool | None, int | None, float | None, float | None, float]:
+                               atr: float, pair_logger, trade_logger, rejected_logger) -> Tuple[bool | None, int | None, float | None, float | None, float]:
     last_ha_candle = heikin_ashi.iloc[-1]
     streak = last_ha_candle.ha_streak
-    is_reversal = np.abs(streak) <= 3
+    is_reversal = np.abs(streak) <= HEIKEN_ASHI_STREAK
     trigger = is_reversal and last_ha_candle.ha_open_at_extreme == 1
 
     sl_price, take_profit, sl_gap = get_probable_stop_loss(np.sign(streak), candles, instrument.pipLocationPrecision)
     atr_multiplier = sl_gap / atr
-    pair_logger(f"ha_open_at_extreme: {last_ha_candle.ha_open_at_extreme}, streak: {last_ha_candle.ha_streak}, atr_multiplier: {atr_multiplier}")
+    pair_logger(f"ha_open_at_extreme: {last_ha_candle.ha_open_at_extreme}, streak: {last_ha_candle.ha_streak}, atr_multiplier: {atr_multiplier}, trigger: {trigger}")
     if trigger:
-        if atr_multiplier < 3:
+        if atr_multiplier < ATR_RISK_FILTER:
             pair_logger(
                 f"==== Heikin buy: streak: {last_ha_candle.ha_streak}, sl_price: {sl_price}, "
                 f"take_profit: {take_profit}, sl_gap: {sl_gap}, atr_multiplier: {atr_multiplier} ====")
 
             return True, np.sign(streak), sl_price, take_profit, atr_multiplier
         else:
-            pair_logger(f"atr_multiplier: {atr_multiplier} is too high, skipping trade")
+            rejected_logger(f"atr_multiplier: {atr_multiplier} is too high, skipping trade")
 
     return False, None, None, None, atr_multiplier
 
@@ -125,9 +126,6 @@ class Bot:
             for pair, settings in trade_settings.pair_settings.items()
         }
         self.polling_period: int = trade_settings.polling_period
-
-        # defaults
-        self.sl_period: int = SL_PERIOD
 
         self.instruments: Dict[str, InstrumentData] = self.base_api.get_all_instruments()
         print(self.instruments)
@@ -192,9 +190,9 @@ class Bot:
             nav: float = float(account_info["NAV"])
 
             # Get current position
-            position_data_1: Optional[PositionData] = self.base_api.get_position(pair)
-            current_units = position_data_1.units if position_data_1 else 0
-            pl = position_data_1.unrealized_pl if position_data_1 else 0
+            position_data: Optional[PositionData] = self.base_api.get_position(pair)
+            current_units = position_data.units if position_data else 0
+            pl = position_data.unrealized_pl if position_data else 0
             pair_logger(
                 f"********* {pair_config.granularity} units: {current_units:.2f}, pl: {pl:.2f} *********")
 
@@ -220,8 +218,8 @@ class Bot:
             atr = candles.iloc[-1][ATR_KEY]
 
             # get upper and lower price bands
-            band_position_200 = check_band_position(candles, current_price, sma_period=200)
-            band_position_50 = check_band_position(candles, current_price, sma_period=50)
+            band_position_200 = check_band_position(candles, current_price, sma_period=SMA_PERIOD_LONG)
+            band_position_50 = check_band_position(candles, current_price, sma_period=SMA_PERIOD_SHORT)
             pair_logger(f"price within band for periods - 200: {band_position_200:.2f}, 50: {band_position_50:.2f}")
 
             # Calculate position size based on NAV and pair weight
@@ -245,14 +243,14 @@ class Bot:
             current_spread, spread_threshold, current_price = get_spread_threshold(pair, candles, self.api_client,
                                                                                    pair_logger)
             is_acceptable_spread = current_spread <= spread_threshold
-            use_limit_order = not is_acceptable_spread
-            pair_logger(f"is_acceptable_spread: {is_acceptable_spread}, use_limit_order: {use_limit_order}")
+            # use_limit_order = not is_acceptable_spread
+            # pair_logger(f"is_acceptable_spread: {is_acceptable_spread}, use_limit_order: {use_limit_order}")
 
             if current_units == 0:
-                should_trade, direction, sl_price, take_profit, atr_multiplier = check_new_trade_conditions(candles, heikin_ashi, instrument, atr, pair_logger, trade_logger)
+                should_trade, direction, sl_price, take_profit, atr_multiplier = check_new_trade_conditions(candles, heikin_ashi, instrument, atr, pair_logger, trade_logger, rejected_logger)
                 if should_trade:
                     qty = base_qty if direction > 0 else -base_qty
-                    trade_logger(f"Placing trade: qty: {qty}, sl_price: {sl_price}, take_profit: {take_profit}, atr_multiplier: {atr_multiplier}")
+                    trade_logger(f"Placing trade: qty: {qty}, sl_price: {sl_price}, take_profit: {take_profit}, atr_multiplier: {atr_multiplier}, is_acceptable_spread: {is_acceptable_spread}")
                     self.api_client.place_trade(pair, qty, instrument, logger=self.logger.log_message,
                                          trailing_stop_gap=None, use_stop_loss=True,
                                          take_profit=take_profit,

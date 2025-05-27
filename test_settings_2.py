@@ -4,6 +4,7 @@ SETTINGS = {
 
 
 
+            "USD_CAD": {"granularity": "H1", "weight": 0.1, "short_only": False},
             "WHEAT_USD": {"granularity": "H1", "weight": 0.1, "short_only": False},
 
             "NATGAS_USD": {"granularity": "H1", "weight": 0.1, "short_only": False},
@@ -21,7 +22,7 @@ SETTINGS = {
             "GBP_JPY": {"granularity": "M30", "weight": 0.1},
             "NZD_JPY": {"granularity": "M30", "weight": 0.1},
             #
-            "EUR_JPY": {"granularity": "M30", "weight": 0.01, "dbl_sm_period": 2},
+            "EUR_JPY": {"granularity": "M30", "weight": 0.01},
 
             "SPX500_USD": {"granularity": "M30", "weight": 0.1},
             "NAS100_USD": {"granularity": "M30", "weight": 0.1},
