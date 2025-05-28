@@ -20,6 +20,8 @@ from utils.get_leverage_ratio import get_leverage_ratio
 from utils.get_spread_threshold import get_spread_threshold
 from utils.get_trade_ex_rate import get_trade_ex_rate
 from utils.heiken_ashi import ohlc_to_heiken_ashi
+from utils.net_strength import get_net_bullish_strength
+from utils.no_op import no_op
 from utils.sma_bands import check_band_position
 
 
@@ -33,34 +35,6 @@ def get_expiry(granularity: str):
         "M1": 60,
     }
     return interval_mapping[granularity]
-
-
-def get_band_scaling_factor(band_position: float) -> float:
-    if band_position < 0.5:
-        factor = 1
-    elif band_position < 0.75:
-        factor = 0.5
-    elif band_position < 0.8:
-        factor = 0.25
-    else:
-        factor = 0
-
-    return factor
-
-
-def get_atr_scaling_factor(atr_factor_sl: float) -> float:
-    if atr_factor_sl > 8:
-        factor = 0.3
-    elif atr_factor_sl > 6:
-        factor = 0.3
-    elif atr_factor_sl > 4.5:
-        factor = 0.5
-    elif atr_factor_sl > 3:
-        factor = 0.75
-    else:
-        factor = 1
-
-    return factor
 
 
 def get_probable_stop_loss(direction, df, pipLocationPrecision):
@@ -226,8 +200,8 @@ class Bot:
             atr = candles.iloc[-1][ATR_KEY]
 
             # get upper and lower price bands
-            band_position_200 = check_band_position(candles, current_price, sma_period=SMA_PERIOD_LONG)
-            band_position_50 = check_band_position(candles, current_price, sma_period=SMA_PERIOD_SHORT)
+            band_position_200 = check_band_position(candles, current_price, sma_period=SMA_PERIOD_LONG, logger=pair_logger)
+            band_position_50 = check_band_position(candles, current_price, sma_period=SMA_PERIOD_SHORT, logger=pair_logger)
             pair_logger(f"price within band for periods - 200: {band_position_200:.2f}, 50: {band_position_50:.2f}")
 
             # Calculate position size based on NAV and pair weight
@@ -252,7 +226,8 @@ class Bot:
                                                                                    pair_logger)
             is_acceptable_spread = current_spread <= spread_threshold
             use_limit_order = not is_acceptable_spread
-            # pair_logger(f"is_acceptable_spread: {is_acceptable_spread}, use_limit_order: {use_limit_order}")
+            net_strength = get_net_bullish_strength(candles["mid_c"], pair_logger, no_op)
+            pair_logger(f"net_strength: {net_strength}")
 
             if current_units == 0:
                 should_trade, direction, sl_price, take_profit, atr_multiplier = check_new_trade_conditions(candles, heikin_ashi, instrument, atr, pair_logger, trade_logger, rejected_logger)
@@ -262,12 +237,6 @@ class Bot:
                     self.place_order(pair, use_limit_order, qty, instrument, current_price,
                                      get_expiry(pair_config.granularity), use_sl=True,
                                      stop_loss=sl_price, take_profit=take_profit)
-
-                    # self.api_client.place_trade(pair, qty, instrument, logger=self.logger.log_message,
-                    #                      trailing_stop_gap=None, use_stop_loss=True,
-                    #                      take_profit=take_profit,
-                    #                      fixed_sl=sl_price)
-
 
         except Exception as e:
             self.logger.log_to_error(f"Error processing {pair}: {str(e)}")

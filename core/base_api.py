@@ -140,15 +140,15 @@ class BaseAPI:
             DataFrame with additional indicator columns
         """
         # Calculate Simple Moving Averages
-        df[SMA_L_KEY] = df["mid_c"].rolling(window=SMA_PERIOD_LONG).mean()
-        df[SMA_S_KEY] = df["mid_c"].rolling(window=SMA_PERIOD_SHORT).mean()
+        # df[SMA_L_KEY] = df["mid_c"].rolling(window=SMA_PERIOD_LONG).mean()
+        # df[SMA_S_KEY] = df["mid_c"].rolling(window=SMA_PERIOD_SHORT).mean()
 
         # Calculate ATR (Average True Range)
         df[ATR_KEY] = compute_atr(df, period=50)
 
-        df["net_trend_50"] = get_net_trend(df["mid_c"], 50)
-        df["net_trend_200"] = get_net_trend(df["mid_c"], 200, 10)
-        pair_logger(f"net_trend_50: {np.array(round(df['net_trend_50'].tail(10), 6))}")
-        pair_logger(f"net_trend_200: {np.array(round(df['net_trend_200'].tail(10), 6))}")
+        # df["net_trend_50"] = get_net_trend(df["mid_c"], 50)
+        # df["net_trend_200"] = get_net_trend(df["mid_c"], 200, 10)
+        # pair_logger(f"net_trend_50: {np.array(round(df['net_trend_50'].tail(10), 6))}")
+        # pair_logger(f"net_trend_200: {np.array(round(df['net_trend_200'].tail(10), 6))}")
 
         return df

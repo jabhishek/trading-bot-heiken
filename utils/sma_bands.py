@@ -32,6 +32,7 @@ def check_within_bands(
     lower_band_series = sma_series * (1 - band_limit)
 
     # Get current band limits
+    sma = sma_series.iloc[-1]
     upper_band_limit = upper_band_series.iloc[-1]
     lower_band_limit = lower_band_series.iloc[-1]
 
@@ -41,14 +42,15 @@ def check_within_bands(
     within_band_limit = not above_upper_band and not below_lower_band
 
     # Log band analysis
-    logger(
-        f"limit: {limit}, "
-        f"band_limit: {round(band_limit, 5)}, "
-        f"within_band_limit: {within_band_limit}, "
-        f"upper_band_limit: {round(upper_band_limit, 3)}, "
-        f"lower_band_limit: {round(lower_band_limit, 3)}, "
-        f"latest_price: {latest_price}"
-    )
+    # logger(
+    #     f"limit: {limit}, "
+    #     f"sma: {sma}, "
+    #     f"band_limit: {round(band_limit, 5)}, "
+    #     f"within_band_limit: {within_band_limit}, "
+    #     f"upper_band_limit: {round(upper_band_limit, 3)}, "
+    #     f"lower_band_limit: {round(lower_band_limit, 3)}, "
+    #     f"latest_price: {latest_price}"
+    # )
 
     return within_band_limit
 
@@ -65,13 +67,19 @@ def check_band_position(
     numbers = np.arange(0.01, 1, 0.01)
     # Calculate percentage difference between price and SMA200
     diff_series = np.abs(price_series - sma_series) / sma_series
+    logger(f"diff_series: {np.array(round(diff_series.tail(10), 6))}")
     desc = diff_series.describe(percentiles=numbers)
 
+    # logger(f"90%: {desc["90%"]}")
+    # logger(f"80%: {desc["80%"]}")
+    # logger(f"60%: {desc["60%"]}")
+    # logger(f"40%: {desc["40%"]}")
+    # logger(f"20%: {desc["20%"]}")
     # get the place in the band array
     for i in numbers:
         band = int(i * 100)
         # print(f"checking for {band}%")
-        within_band = check_within_bands(sma_series, latest_price, desc, f"{band}%", no_op)
+        within_band = check_within_bands(sma_series, latest_price, desc, f"{band}%", logger)
         if within_band:
             return i
     return None
