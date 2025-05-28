@@ -1,9 +1,6 @@
 SETTINGS = {
     "pairs":
         {
-
-
-
             "USD_CAD": {"granularity": "H1", "weight": 0.1, "short_only": False},
             "WHEAT_USD": {"granularity": "H1", "weight": 0.1, "short_only": False},
 

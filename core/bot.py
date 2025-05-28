@@ -174,6 +174,14 @@ class Bot:
             self.trade_settings.std_lookback,
         )
 
+    def place_order(self, pair, use_limit, trade_qty: float, instrument, price, expiry, use_sl=False, stop_loss=None, take_profit=None):
+        if use_limit:
+            self.api_client.place_limit_order(pair, trade_qty, price, expiry, instrument,
+                                       logger=self.logger.log_message, use_stop_loss=use_sl, fixed_sl=stop_loss, take_profit=take_profit)
+        else:
+            self.api_client.place_trade(pair, trade_qty, instrument, logger=self.logger.log_message, use_stop_loss=use_sl,
+                                        fixed_sl=stop_loss, take_profit=take_profit)
+
     def process_pair(self, pair: str) -> None:
         """Process a single trading pair."""
         try:
@@ -243,18 +251,22 @@ class Bot:
             current_spread, spread_threshold, current_price = get_spread_threshold(pair, candles, self.api_client,
                                                                                    pair_logger)
             is_acceptable_spread = current_spread <= spread_threshold
-            # use_limit_order = not is_acceptable_spread
+            use_limit_order = not is_acceptable_spread
             # pair_logger(f"is_acceptable_spread: {is_acceptable_spread}, use_limit_order: {use_limit_order}")
 
             if current_units == 0:
                 should_trade, direction, sl_price, take_profit, atr_multiplier = check_new_trade_conditions(candles, heikin_ashi, instrument, atr, pair_logger, trade_logger, rejected_logger)
                 if should_trade:
                     qty = base_qty if direction > 0 else -base_qty
-                    trade_logger(f"Placing trade: qty: {qty}, sl_price: {sl_price}, take_profit: {take_profit}, atr_multiplier: {atr_multiplier}, is_acceptable_spread: {is_acceptable_spread}")
-                    self.api_client.place_trade(pair, qty, instrument, logger=self.logger.log_message,
-                                         trailing_stop_gap=None, use_stop_loss=True,
-                                         take_profit=take_profit,
-                                         fixed_sl=sl_price)
+                    trade_logger(f"Placing trade: qty: {qty}, sl_price: {sl_price}, take_profit: {take_profit}, atr_multiplier: {atr_multiplier}, is_acceptable_spread: {is_acceptable_spread}, use_limit_order: {use_limit_order}")
+                    self.place_order(pair, use_limit_order, qty, instrument, current_price,
+                                     get_expiry(pair_config.granularity), use_sl=True,
+                                     stop_loss=sl_price, take_profit=take_profit)
+
+                    # self.api_client.place_trade(pair, qty, instrument, logger=self.logger.log_message,
+                    #                      trailing_stop_gap=None, use_stop_loss=True,
+                    #                      take_profit=take_profit,
+                    #                      fixed_sl=sl_price)
 
 
         except Exception as e:
