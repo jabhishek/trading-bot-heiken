@@ -81,4 +81,4 @@ def check_band_position(
         within_band = check_within_bands(sma_series, latest_price, desc, f"{band}%", logger)
         if within_band:
             return i
-    return None
+    return 1

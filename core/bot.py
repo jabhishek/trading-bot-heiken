@@ -17,25 +17,13 @@ from core.pair_config import PairConfig
 from models.TradeSettings import TradeSettings
 from models.instrument_data import InstrumentData
 from models.position_data import PositionData
+from utils.get_expiry import get_expiry
 from utils.get_spread_threshold import get_spread_threshold
 from utils.get_trade_ex_rate import get_trade_ex_rate
-from utils.heiken_ashi import ohlc_to_heiken_ashi
 from utils.net_strength import get_net_bullish_strength
 from utils.no_op import no_op
 from utils.sma_bands import check_band_position
 from utils.stop_loss import get_probable_stop_loss
-
-
-def get_expiry(granularity: str):
-    interval_mapping = {
-        "H4": 60 * 4 * 60,
-        "H1": 60 * 60,
-        "M30": 30 * 60,
-        "M15": 15 * 60,
-        "M5": 5 * 60,
-        "M1": 60,
-    }
-    return interval_mapping[granularity]
 
 
 def check_new_trade_conditions(candles: pd.DataFrame, heikin_ashi: pd.DataFrame, instrument: InstrumentData,
@@ -68,7 +56,8 @@ class Bot:
             trade_settings: TradeSettings,
             bot_name: str,
             api_client: OandaApi,
-            strategy_manager: StrategyManager
+            strategy_manager: StrategyManager,
+            base_api: BaseAPI
     ) -> None:
         self.api_client = api_client
         self.base_api: BaseAPI = BaseAPI(self.api_client)
@@ -144,19 +133,13 @@ class Bot:
             # Calculate indicators
             candles = self.base_api.calculate_indicators(candles, pair_config, pair_logger)
 
-            heikin_ashi: pd.DataFrame = ohlc_to_heiken_ashi(candles)
-            trigger = self.strategy_manager.check_for_trigger(candles)
-
-            pair_logger(f"trigger: {trigger}")
             # Get current price
             current_price: float = candles.iloc[-1]["mid_c"]
-            atr = candles.iloc[-1][ATR_KEY]
 
             # get upper and lower price bands
             band_position_200 = check_band_position(candles, current_price, sma_period=SMA_PERIOD_LONG, logger=pair_logger)
             band_position_50 = check_band_position(candles, current_price, sma_period=SMA_PERIOD_SHORT, logger=pair_logger)
             pair_logger(f"price within band for periods - 200: {band_position_200:.2f}, 50: {band_position_50:.2f}")
-
             # Calculate position size based on NAV and pair weight
             exposure_at_no_leverage: float = nav * pair_config.weight
 
@@ -179,17 +162,28 @@ class Bot:
                                                                                    pair_logger)
             is_acceptable_spread = current_spread <= spread_threshold
             use_limit_order = not is_acceptable_spread
-            net_strength = get_net_bullish_strength(candles["mid_c"], pair_logger, no_op)
+
+            net_strength = get_net_bullish_strength(candles["mid_c"], logger=pair_logger, steps_logger=no_op)
             pair_logger(f"net_strength: {net_strength}")
 
+            trigger = self.strategy_manager.check_for_trigger(candles, pair_logger)
+
             if current_units == 0 and trigger != 0:
-                self.strategy_manager.check_and_place_trade()
-                self.check_and_place_order(candles, heikin_ashi, base_qty, instrument,
-                                           is_acceptable_spread, pair, pair_config, net_strength, use_limit_order,
-                                           pair_logger, rejected_logger, trade_logger)
+                pair_logger(f"checking for trade - trigger: {trigger}")
+                qty, sl_price, take_profit = self.strategy_manager.check_and_get_trade_qty(candles=candles, trigger=trigger, instrument=instrument,
+                                                                                           base_qty=base_qty, pair_logger=pair_logger,
+                                                                                           rejected_logger=rejected_logger)
+                if qty != 0:
+                    trade_logger(f"Placed trade: qty: {qty}, sl_price: {current_price}, take_profit: {current_price}, atr_multiplier: {1}, is_acceptable_spread: {is_acceptable_spread}, use_limit_order: {use_limit_order}")
+                    self.base_api.place_order(pair, use_limit_order, qty, instrument, current_price,
+                                              get_expiry(pair_config.granularity), use_sl=True,
+                                              stop_loss=sl_price, take_profit=take_profit, logger=self.logger.log_message)
+            else:
+                pair_logger(f"No check for trade")
 
         except Exception as e:
             self.logger.log_to_error(f"Error processing {pair}: {str(e)}")
+            print(e)
             raise
 
     def check_and_place_order(self, candles, heikin_ashi, base_qty, instrument,
@@ -215,13 +209,17 @@ class Bot:
 
     def process_pairs(self, pairs: List[str]) -> None:
         """Process multiple pairs in parallel."""
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            futures: List[concurrent.futures.Future] = [executor.submit(self.process_pair, pair) for pair in pairs]
-            for future in concurrent.futures.as_completed(futures):
-                try:
-                    future.result()
-                except Exception as e:
-                    self.logger.log_to_error(f"Error in parallel processing: {str(e)}")
+        for p in pairs:
+            self.logger.log_to_main(f"Processing pair: {p}")
+            self.process_pair(pair=p)
+
+        # with concurrent.futures.ThreadPoolExecutor() as executor:
+        #     futures: List[concurrent.futures.Future] = [executor.submit(self.process_pair, pair) for pair in pairs]
+        #     for future in concurrent.futures.as_completed(futures):
+        #         try:
+        #             future.result()
+        #         except Exception as e:
+        #             self.logger.log_to_error(f"Error in parallel processing: {str(e)}")
 
     def run(self) -> None:
         """Run the main bot loop."""
