@@ -1,9 +1,14 @@
+from api.OandaApi import OandaApi
 from core.bot import Bot
 from test_settings_2 import SETTINGS as settings
+from core.StrategyManager import StrategyManager
 import api.constants_test_1 as account_settings
 from models.TradeSettings import TradeSettings
 
 if __name__ == "__main__":
+    api_client: OandaApi = OandaApi(api_key=account_settings.API_KEY, account_id=account_settings.ACCOUNT_ID,
+                                         url=account_settings.OANDA_URL)
     trade_settings = TradeSettings(settings)
-    bot = Bot(account_settings=account_settings, trade_settings=trade_settings, bot_name="live_db_sm_v2")
+    strategy_manager = StrategyManager(api_client, trade_settings)
+    bot = Bot(api_client=api_client, trade_settings=trade_settings, bot_name="live_db_sm_v2", strategy_manager=strategy_manager)
     bot.run()

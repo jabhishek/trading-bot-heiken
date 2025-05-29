@@ -9,6 +9,7 @@ from typing_extensions import Callable
 from api.OandaApi import OandaApi
 from config.constants import ATR_KEY, HEIKEN_ASHI_STREAK, ATR_RISK_FILTER, SMA_PERIOD_LONG, \
     SMA_PERIOD_SHORT
+from core.StrategyManager import StrategyManager
 from core.base_api import BaseAPI
 from core.candle_manager import CandleManager
 from core.log_wrapper import LogManager
@@ -64,15 +65,16 @@ def check_for_trade_trigger(heikin_ashi):
 class Bot:
     def __init__(
             self,
-            account_settings,
             trade_settings: TradeSettings,
             bot_name: str,
+            api_client: OandaApi,
+            strategy_manager: StrategyManager
     ) -> None:
-        self.api_client: OandaApi = OandaApi(api_key=account_settings.API_KEY, account_id=account_settings.ACCOUNT_ID,
-                                             url=account_settings.OANDA_URL)
+        self.api_client = api_client
         self.base_api: BaseAPI = BaseAPI(self.api_client)
         self.trade_settings: TradeSettings = trade_settings
         self.bot_name: str = bot_name
+        self.strategy_manager: StrategyManager = strategy_manager
 
         self.trading_pairs: List[str] = list(trade_settings.pairs)
         self.pair_configs: Dict[str, PairConfig] = {
@@ -143,7 +145,9 @@ class Bot:
             candles = self.base_api.calculate_indicators(candles, pair_config, pair_logger)
 
             heikin_ashi: pd.DataFrame = ohlc_to_heiken_ashi(candles)
+            trigger = self.strategy_manager.check_for_trigger(candles)
 
+            pair_logger(f"trigger: {trigger}")
             # Get current price
             current_price: float = candles.iloc[-1]["mid_c"]
             atr = candles.iloc[-1][ATR_KEY]
@@ -178,7 +182,8 @@ class Bot:
             net_strength = get_net_bullish_strength(candles["mid_c"], pair_logger, no_op)
             pair_logger(f"net_strength: {net_strength}")
 
-            if current_units == 0:
+            if current_units == 0 and trigger != 0:
+                self.strategy_manager.check_and_place_trade()
                 self.check_and_place_order(candles, heikin_ashi, base_qty, instrument,
                                            is_acceptable_spread, pair, pair_config, net_strength, use_limit_order,
                                            pair_logger, rejected_logger, trade_logger)
@@ -232,7 +237,7 @@ class Bot:
                     tm_min = time.localtime().tm_min
                     tm_sec = time.localtime().tm_sec
 
-                    if tm_sec < 30 and tm_sec % 5 < 3:
+                    if tm_sec < 60 and tm_sec % 5 < 3:
                         print(f"{tm_mday} {tm_hour}:{tm_min}:{tm_sec}")
                         # Check for new candles
                         pairs_with_new_candles: List[str] = self.candle_manager.update_timings()

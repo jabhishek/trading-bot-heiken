@@ -67,7 +67,6 @@ def check_band_position(
     numbers = np.arange(0.01, 1, 0.01)
     # Calculate percentage difference between price and SMA200
     diff_series = np.abs(price_series - sma_series) / sma_series
-    logger(f"diff_series: {np.array(round(diff_series.tail(10), 6))}")
     desc = diff_series.describe(percentiles=numbers)
 
     # logger(f"90%: {desc["90%"]}")
