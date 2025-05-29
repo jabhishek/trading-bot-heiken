@@ -16,7 +16,6 @@ from core.pair_config import PairConfig
 from models.TradeSettings import TradeSettings
 from models.instrument_data import InstrumentData
 from models.position_data import PositionData
-from utils.get_leverage_ratio import get_leverage_ratio
 from utils.get_spread_threshold import get_spread_threshold
 from utils.get_trade_ex_rate import get_trade_ex_rate
 from utils.heiken_ashi import ohlc_to_heiken_ashi
@@ -105,26 +104,6 @@ class Bot:
             self.logger.log_to_error(f"Error during setup: {str(e)}")
             raise
 
-    def calculate_leverage_ratio(self, pair: str, instrument: InstrumentData) -> float:
-        df_daily: pd.DataFrame = self.api_client.get_candles_df(
-            pair, completed_only=True, granularity="D", count=500
-        )
-        return get_leverage_ratio(
-            df_daily,
-            "D",
-            instrument.marginRate,
-            self.trade_settings.vol_target,
-            self.trade_settings.std_lookback,
-        )
-
-    def place_order(self, pair, use_limit, trade_qty: float, instrument, price, expiry, use_sl=False, stop_loss=None, take_profit=None):
-        if use_limit:
-            self.api_client.place_limit_order(pair, trade_qty, price, expiry, instrument,
-                                       logger=self.logger.log_message, use_stop_loss=use_sl, fixed_sl=stop_loss, take_profit=take_profit)
-        else:
-            self.api_client.place_trade(pair, trade_qty, instrument, logger=self.logger.log_message, use_stop_loss=use_sl,
-                                        fixed_sl=stop_loss, take_profit=take_profit)
-
     def process_pair(self, pair: str) -> None:
         """Process a single trading pair."""
         try:
@@ -177,7 +156,7 @@ class Bot:
             exposure_at_no_leverage: float = nav * pair_config.weight
 
             # Calculate exposure metrics
-            leverage_ratio: float = self.calculate_leverage_ratio(pair, instrument)
+            leverage_ratio: float = self.base_api.calculate_leverage_ratio(pair, instrument, self.trade_settings)
             max_gbp_exposure: float = leverage_ratio * exposure_at_no_leverage
             ex_rate: float = get_trade_ex_rate(pair, self.api_client)
             max_currency_exposure: float = max_gbp_exposure * ex_rate
@@ -203,9 +182,9 @@ class Bot:
                 if should_trade:
                     qty = base_qty if direction > 0 else -base_qty
                     trade_logger(f"Placing trade: qty: {qty}, sl_price: {sl_price}, take_profit: {take_profit}, atr_multiplier: {atr_multiplier}, is_acceptable_spread: {is_acceptable_spread}, use_limit_order: {use_limit_order}")
-                    self.place_order(pair, use_limit_order, qty, instrument, current_price,
+                    self.base_api.place_order(pair, use_limit_order, qty, instrument, current_price,
                                      get_expiry(pair_config.granularity), use_sl=True,
-                                     stop_loss=sl_price, take_profit=take_profit)
+                                     stop_loss=sl_price, take_profit=take_profit, logger=self.logger.log_message)
 
         except Exception as e:
             self.logger.log_to_error(f"Error processing {pair}: {str(e)}")

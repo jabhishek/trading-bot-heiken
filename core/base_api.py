@@ -6,11 +6,14 @@ import pandas as pd
 from api.OandaApi import OandaApi
 from config.constants import SMA_L_KEY, SMA_PERIOD_LONG, SMA_PERIOD_SHORT, SMA_S_KEY, ATR_KEY
 from core.pair_config import PairConfig
+from models.TradeSettings import TradeSettings
 from models.instrument_data import InstrumentData
 from models.open_trade import OpenTrade
 from models.position_data import PositionData
 from utils.atr import compute_atr
+from utils.get_leverage_ratio import get_leverage_ratio
 from utils.net_sma_trend import get_net_trend
+from utils.no_op import no_op
 
 
 class BaseAPI:
@@ -21,18 +24,6 @@ class BaseAPI:
     def __init__(self, oanda_api: OandaApi):
         """
         Initialize the base API client.
-
-        Args:
-            oanda_api (OandaApi): Instance of OandaApi for making API calls
-
-        The initialization process:
-        1. Sets up API client
-        2. Validates connection
-        3. Prepares for data processing
-
-        Raises:
-            APIError: If API connection fails
-            ValueError: If API client is invalid
         """
         self.oanda_api = oanda_api
 
@@ -44,13 +35,6 @@ class BaseAPI:
 
         This method fetches the list of available instruments from Oanda API,
         processes the data to extract required fields, and creates InstrumentData objects.
-
-        Returns:
-            Dictionary mapping instrument names to InstrumentData objects.
-            Returns an empty dictionary if the API call fails or no instruments are found.
-
-        Raises:
-            ValueError: If the API response is invalid or missing required fields
         """
         try:
             instrument_list = self.oanda_api.get_account_instruments()
@@ -97,15 +81,21 @@ class BaseAPI:
             return trades
         return None
 
+    def calculate_leverage_ratio(self, pair: str, instrument: InstrumentData, trade_settings: TradeSettings) -> float:
+        df_daily: pd.DataFrame = self.oanda_api.get_candles_df(
+            pair, completed_only=True, granularity="D", count=500
+        )
+        return get_leverage_ratio(
+            df_daily,
+            "D",
+            instrument.marginRate,
+            trade_settings.vol_target,
+            trade_settings.std_lookback,
+        )
+
     def get_position(self, instrument: str) -> Optional[PositionData]:
         """
         Get position information for a specific instrument.
-
-        Args:
-            instrument: Name of the instrument to get position for
-
-        Returns:
-            PositionData object if position exists, None otherwise
         """
         try:
             position = self.oanda_api.get_instrument_position(instrument)
@@ -123,21 +113,19 @@ class BaseAPI:
             print(f"Error fetching position for {instrument}: {e}")
             return None
 
+    def place_order(self, pair, use_limit, trade_qty: float, instrument, price, expiry, use_sl=False, stop_loss=None, take_profit=None, logger=no_op):
+        if use_limit:
+            self.oanda_api.place_limit_order(pair, trade_qty, price, expiry, instrument,
+                                       logger=logger, use_stop_loss=use_sl, fixed_sl=stop_loss, take_profit=take_profit)
+        else:
+            self.oanda_api.place_trade(pair, trade_qty, instrument, logger=logger, use_stop_loss=use_sl,
+                                        fixed_sl=stop_loss, take_profit=take_profit)
+
+
     def calculate_indicators(self, df: pd.DataFrame, pair_config: PairConfig,
                              pair_logger: Callable[[str], None]) -> pd.DataFrame:
         """
         Calculate technical indicators for the given price data.
-
-        Args:
-            df: DataFrame containing price data with columns:
-                - time: datetime index
-                - mid_o: open price
-                - mid_h: high price
-                - mid_l: low price
-                - mid_c: close price
-
-        Returns:
-            DataFrame with additional indicator columns
         """
         # Calculate Simple Moving Averages
         # df[SMA_L_KEY] = df["mid_c"].rolling(window=SMA_PERIOD_LONG).mean()
