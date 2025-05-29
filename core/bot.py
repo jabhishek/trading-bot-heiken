@@ -39,25 +39,26 @@ def get_expiry(granularity: str):
 
 def check_new_trade_conditions(candles: pd.DataFrame, heikin_ashi: pd.DataFrame, instrument: InstrumentData,
                                atr: float, pair_logger, trade_logger, rejected_logger) -> Tuple[bool | None, int | None, float | None, float | None, float]:
-    last_ha_candle = heikin_ashi.iloc[-1]
-    streak = last_ha_candle.ha_streak
-    is_reversal = np.abs(streak) <= HEIKEN_ASHI_STREAK
-    trigger = is_reversal and last_ha_candle.ha_open_at_extreme == 1
+    streak, trigger = check_for_trade_trigger(heikin_ashi)
 
     sl_price, take_profit, sl_gap = get_probable_stop_loss(np.sign(streak), candles, instrument.pipLocationPrecision)
     atr_multiplier = sl_gap / atr
-    pair_logger(f"ha_open_at_extreme: {last_ha_candle.ha_open_at_extreme}, streak: {last_ha_candle.ha_streak}, atr_multiplier: {atr_multiplier}, trigger: {trigger}")
     if trigger:
         if atr_multiplier < ATR_RISK_FILTER:
-            pair_logger(
-                f"==== Heikin buy: streak: {last_ha_candle.ha_streak}, sl_price: {sl_price}, "
-                f"take_profit: {take_profit}, sl_gap: {sl_gap}, atr_multiplier: {atr_multiplier} ====")
-
             return True, np.sign(streak), sl_price, take_profit, atr_multiplier
         else:
             rejected_logger(f"atr_multiplier: {atr_multiplier} is too high, skipping trade")
 
     return False, None, None, None, atr_multiplier
+
+
+def check_for_trade_trigger(heikin_ashi):
+    last_ha_candle = heikin_ashi.iloc[-1]
+    streak = last_ha_candle.ha_streak
+    is_reversal = np.abs(streak) <= HEIKEN_ASHI_STREAK
+    trigger = is_reversal and last_ha_candle.ha_open_at_extreme == 1
+    print(f"streak: {streak}, trigger: {trigger}")
+    return streak, trigger
 
 
 class Bot:
@@ -178,17 +179,34 @@ class Bot:
             pair_logger(f"net_strength: {net_strength}")
 
             if current_units == 0:
-                should_trade, direction, sl_price, take_profit, atr_multiplier = check_new_trade_conditions(candles, heikin_ashi, instrument, atr, pair_logger, trade_logger, rejected_logger)
-                if should_trade:
-                    qty = base_qty if direction > 0 else -base_qty
-                    trade_logger(f"Placing trade: qty: {qty}, sl_price: {sl_price}, take_profit: {take_profit}, atr_multiplier: {atr_multiplier}, is_acceptable_spread: {is_acceptable_spread}, use_limit_order: {use_limit_order}")
-                    self.base_api.place_order(pair, use_limit_order, qty, instrument, current_price,
-                                     get_expiry(pair_config.granularity), use_sl=True,
-                                     stop_loss=sl_price, take_profit=take_profit, logger=self.logger.log_message)
+                self.check_and_place_order(candles, heikin_ashi, base_qty, instrument,
+                                           is_acceptable_spread, pair, pair_config, net_strength, use_limit_order,
+                                           pair_logger, rejected_logger, trade_logger)
 
         except Exception as e:
             self.logger.log_to_error(f"Error processing {pair}: {str(e)}")
             raise
+
+    def check_and_place_order(self, candles, heikin_ashi, base_qty, instrument,
+                              is_acceptable_spread, pair, pair_config, net_strength,
+                              use_limit_order, pair_logger, rejected_logger, trade_logger):
+        current_price: float = candles.iloc[-1]["mid_c"]
+        atr = candles.iloc[-1][ATR_KEY]
+
+        should_trade, direction, sl_price, take_profit, atr_multiplier = check_new_trade_conditions(candles,
+                                                                                                    heikin_ashi,
+                                                                                                    instrument, atr,
+                                                                                                    pair_logger,
+                                                                                                    trade_logger,
+                                                                                                    rejected_logger)
+        if should_trade and direction is not None:
+            qty = base_qty if direction > 0 else -base_qty
+            trade_logger(
+                f"Placing trade: qty: {qty}, sl_price: {sl_price}, take_profit: {take_profit}, "
+                f"atr_multiplier: {atr_multiplier}, is_acceptable_spread: {is_acceptable_spread}, use_limit_order: {use_limit_order}")
+            self.base_api.place_order(pair, use_limit_order, qty, instrument, current_price,
+                                      get_expiry(pair_config.granularity), use_sl=True,
+                                      stop_loss=sl_price, take_profit=take_profit, logger=self.logger.log_message)
 
     def process_pairs(self, pairs: List[str]) -> None:
         """Process multiple pairs in parallel."""
