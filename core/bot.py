@@ -7,7 +7,7 @@ import pandas as pd
 from typing_extensions import Callable
 
 from api.OandaApi import OandaApi
-from config.constants import ATR_KEY, TP_MULTIPLE, HEIKEN_ASHI_STREAK, ATR_RISK_FILTER, SMA_PERIOD_LONG, \
+from config.constants import ATR_KEY, HEIKEN_ASHI_STREAK, ATR_RISK_FILTER, SMA_PERIOD_LONG, \
     SMA_PERIOD_SHORT
 from core.base_api import BaseAPI
 from core.candle_manager import CandleManager
@@ -23,6 +23,7 @@ from utils.heiken_ashi import ohlc_to_heiken_ashi
 from utils.net_strength import get_net_bullish_strength
 from utils.no_op import no_op
 from utils.sma_bands import check_band_position
+from utils.stop_loss import get_probable_stop_loss
 
 
 def get_expiry(granularity: str):
@@ -35,27 +36,6 @@ def get_expiry(granularity: str):
         "M1": 60,
     }
     return interval_mapping[granularity]
-
-
-def get_probable_stop_loss(direction, df, pipLocationPrecision):
-    spread = (df["ask_c"] - df["bid_c"]).iloc[-1]
-    price = df["mid_c"].iloc[-1]
-
-    high = df["mid_h"].rolling(window=10).max()
-    low = df["mid_l"].rolling(window=10).min()
-
-    if direction > 0:
-        sl_price = low.iloc[-1] - spread
-    else:
-        sl_price = high.iloc[-1] + spread
-
-    sl_price = round(sl_price, abs(pipLocationPrecision))
-    sl_gap = round(abs(price - sl_price), abs(pipLocationPrecision))
-
-    take_profit = price + sl_gap * TP_MULTIPLE if direction > 0 else price - sl_gap * TP_MULTIPLE
-    take_profit = round(take_profit, abs(pipLocationPrecision))
-
-    return sl_price, take_profit, sl_gap
 
 
 def check_new_trade_conditions(candles: pd.DataFrame, heikin_ashi: pd.DataFrame, instrument: InstrumentData,
@@ -114,26 +94,15 @@ class Bot:
             pair_settings={pair: config.get_raw_settings() for pair, config in self.pair_configs.items()},
             logger=self.logger
         )
+        self.setup()
 
     def setup(self) -> None:
         """Initialize bot components and load required data."""
         try:
-            self._load_account_info()
             self.api_client.update_leverage(5)
             self.logger.log_to_main("Bot setup completed successfully")
         except Exception as e:
             self.logger.log_to_error(f"Error during setup: {str(e)}")
-            raise
-
-    def _load_account_info(self) -> None:
-        """Load and validate account information."""
-        try:
-            account_info: Dict[str, Any] = self.api_client.get_account_summary()
-            if not account_info:
-                raise ValueError("Invalid account information received")
-            self.logger.log_to_main("Account information loaded successfully")
-        except Exception as e:
-            self.logger.log_to_error(f"Error loading account info: {str(e)}")
             raise
 
     def calculate_leverage_ratio(self, pair: str, instrument: InstrumentData) -> float:
@@ -256,7 +225,6 @@ class Bot:
         """Run the main bot loop."""
 
         try:
-            self.setup()
             self.logger.log_to_main("Starting main loop")
             # self.process_pairs(self.trading_pairs)
 
