@@ -23,32 +23,6 @@ from utils.get_trade_ex_rate import get_trade_ex_rate
 from utils.net_strength import get_net_bullish_strength
 from utils.no_op import no_op
 from utils.sma_bands import check_band_position
-from utils.stop_loss import get_probable_stop_loss
-
-
-def check_new_trade_conditions(candles: pd.DataFrame, heikin_ashi: pd.DataFrame, instrument: InstrumentData,
-                               atr: float, pair_logger, trade_logger, rejected_logger) -> Tuple[bool | None, int | None, float | None, float | None, float]:
-    streak, trigger = check_for_trade_trigger(heikin_ashi)
-
-    sl_price, take_profit, sl_gap = get_probable_stop_loss(np.sign(streak), candles, instrument.pipLocationPrecision)
-    atr_multiplier = sl_gap / atr
-    if trigger:
-        if atr_multiplier < ATR_RISK_FILTER:
-            return True, np.sign(streak), sl_price, take_profit, atr_multiplier
-        else:
-            rejected_logger(f"atr_multiplier: {atr_multiplier} is too high, skipping trade")
-
-    return False, None, None, None, atr_multiplier
-
-
-def check_for_trade_trigger(heikin_ashi):
-    last_ha_candle = heikin_ashi.iloc[-1]
-    streak = last_ha_candle.ha_streak
-    is_reversal = np.abs(streak) <= HEIKEN_ASHI_STREAK
-    trigger = is_reversal and last_ha_candle.ha_open_at_extreme == 1
-    print(f"streak: {streak}, trigger: {trigger}")
-    return streak, trigger
-
 
 class Bot:
     def __init__(
@@ -164,20 +138,31 @@ class Bot:
             use_limit_order = not is_acceptable_spread
 
             net_strength = get_net_bullish_strength(candles["mid_c"], logger=pair_logger, steps_logger=no_op)
-            pair_logger(f"net_strength: {round(net_strength, 2)}")
+            qty_at_net_strength = base_qty * net_strength
+            pair_logger(f"net_strength: {round(net_strength, 2)}, qty_at_net_strength: {round(qty_at_net_strength, 2)}")
 
             trigger = self.strategy_manager.check_for_trigger(candles, pair_logger)
 
+            # look for new positions
             if current_units == 0 and trigger != 0:
                 pair_logger(f"checking for trade - trigger: {trigger}")
                 qty, sl_price, take_profit = self.strategy_manager.check_and_get_trade_qty(candles=candles, trigger=trigger, instrument=instrument,
-                                                                                           base_qty=base_qty, pair_logger=pair_logger,
-                                                                                           rejected_logger=rejected_logger, trend_strength=net_strength)
+                                                                                           qty_at_net_strength=qty_at_net_strength, pair_logger=pair_logger,
+                                                                                           rejected_logger=rejected_logger, trend_strength=net_strength,
+                                                                                           pair_config=pair_config)
                 if qty != 0:
                     trade_logger(f"Placed trade: qty: {qty}, trend_strength: {net_strength}")
                     self.base_api.place_order(pair, use_limit_order, qty, instrument, current_price,
                                               get_expiry(pair_config.granularity), use_sl=True,
                                               stop_loss=sl_price, take_profit=take_profit, logger=self.logger.log_message)
+            elif current_units != 0:
+                # check for closing positions
+                if trigger != 0 and np.sign(trigger) != np.sign(current_utilisation):
+                    pair_logger(f"checking for book profit - trigger: {trigger}, current_utilisation: {current_utilisation}")
+                if trigger != 0 and np.sign(trigger) == np.sign(current_utilisation):
+                    pair_logger(f"checking for adding to position - trigger: {trigger}, current_units: {current_units}, "
+                                f"qty_at_net_strength: {qty_at_net_strength}")
+                pass
             else:
                 pair_logger(f"No check for trade. current_units: {current_units}, trigger: {trigger}")
 
@@ -214,7 +199,7 @@ class Bot:
                     tm_min = time.localtime().tm_min
                     tm_sec = time.localtime().tm_sec
 
-                    if tm_sec < 60 and tm_sec % 5 < 3:
+                    if tm_sec % 5 == 3:
                         print(f"{tm_mday} {tm_hour}:{tm_min}:{tm_sec}")
                         # Check for new candles
                         pairs_with_new_candles: List[str] = self.candle_manager.update_timings()
