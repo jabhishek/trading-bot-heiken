@@ -24,6 +24,16 @@ from utils.net_strength import get_net_bullish_strength
 from utils.no_op import no_op
 from utils.sma_bands import check_band_position
 
+def get_additional_qty(ideal_qty, current_position):
+    if np.sign(ideal_qty) != np.sign(current_position):
+        return 0
+
+    diff = ideal_qty - current_position
+    if np.sign(diff) != np.sign(current_position):
+        return 0
+
+    return diff
+
 class Bot:
     def __init__(
             self,
@@ -147,7 +157,7 @@ class Bot:
             if current_units == 0 and trigger != 0:
                 pair_logger(f"checking for trade - trigger: {trigger}")
                 qty, sl_price, take_profit = self.strategy_manager.check_and_get_trade_qty(candles=candles, trigger=trigger, instrument=instrument,
-                                                                                           qty_at_net_strength=qty_at_net_strength, pair_logger=pair_logger,
+                                                                                           qty=qty_at_net_strength, pair_logger=pair_logger,
                                                                                            rejected_logger=rejected_logger, trend_strength=net_strength,
                                                                                            pair_config=pair_config)
                 if qty != 0:
@@ -159,9 +169,26 @@ class Bot:
                 # check for closing positions
                 if trigger != 0 and np.sign(trigger) != np.sign(current_utilisation):
                     pair_logger(f"checking for book profit - trigger: {trigger}, current_utilisation: {current_utilisation}")
+
+                # check for adding to position
                 if trigger != 0 and np.sign(trigger) == np.sign(current_utilisation):
+                    additional_qty = get_additional_qty(qty_at_net_strength, current_units)
+                    qty, sl_price, take_profit = self.strategy_manager.check_and_get_trade_qty(candles=candles,
+                                                                                               trigger=trigger,
+                                                                                               instrument=instrument,
+                                                                                               qty=additional_qty,
+                                                                                               pair_logger=pair_logger,
+                                                                                               rejected_logger=rejected_logger,
+                                                                                               trend_strength=net_strength,
+                                                                                               pair_config=pair_config)
                     pair_logger(f"checking for adding to position - trigger: {trigger}, current_units: {current_units}, "
-                                f"qty_at_net_strength: {qty_at_net_strength}")
+                                f"qty_at_net_strength: {qty_at_net_strength}, additional_qty: {additional_qty}")
+                    if qty != 0:
+                        trade_logger(f"Placed additional trade: qty: {qty}, trend_strength: {net_strength}")
+                        self.base_api.place_order(pair, use_limit_order, qty, instrument, current_price,
+                                                  get_expiry(pair_config.granularity), use_sl=True,
+                                                  stop_loss=sl_price, take_profit=take_profit,
+                                                  logger=self.logger.log_message)
                 pass
             else:
                 pair_logger(f"No check for trade. current_units: {current_units}, trigger: {trigger}")

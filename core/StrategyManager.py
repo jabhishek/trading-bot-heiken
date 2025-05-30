@@ -49,11 +49,11 @@ class StrategyManager:
             return signal, sl_price, take_profit
 
     def check_and_get_trade_qty(self, candles: pd.DataFrame, trigger: int, instrument: InstrumentData,
-                                qty_at_net_strength: float, pair_logger, rejected_logger, trend_strength: float, pair_config: PairConfig):
+                                qty: float, pair_logger, rejected_logger, trend_strength: float, pair_config: PairConfig):
         revised_signal, sl_price, take_profit = self._check_for_trading_condition(candles, trigger, instrument,
                                                                                   pair_logger, rejected_logger,
                                                                                   trend_strength=trend_strength, pair_config=pair_config)
         if revised_signal != 0:
-            return qty_at_net_strength, sl_price, take_profit
+            return qty, sl_price, take_profit
 
         return 0, None, None
