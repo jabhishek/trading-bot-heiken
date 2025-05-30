@@ -1,25 +1,25 @@
 SETTINGS = {
     "pairs":
         {
-            "USD_CAD": {"granularity": "H1", "weight": 0.1, "short_only": False},
-            "WHEAT_USD": {"granularity": "H1", "weight": 0.1, "short_only": False},
+            "USD_CAD": {"granularity": "M30", "weight": 0.1},
+            "WHEAT_USD": {"granularity": "H1", "weight": 0.1, "short_only": True},
 
-            "NATGAS_USD": {"granularity": "H1", "weight": 0.1, "short_only": False},
+            "NATGAS_USD": {"granularity": "H1", "weight": 0.1, "short_only": True},
 
-            "SUGAR_USD": {"granularity": "H1", "weight": 0.1, "long_only": False},
-            "BCO_USD": {"granularity": "H1", "weight": 0.1, "long_only": False},
+            "SUGAR_USD": {"granularity": "H1", "weight": 0.1, "long_only": True},
+            "BCO_USD": {"granularity": "H1", "weight": 0.1, "long_only": True},
 
             "USD_CHF": {"granularity": "M30", "weight": 0.1},
             "EUR_CHF": {"granularity": "M30", "weight": 0.1},
             "USD_JPY": {"granularity": "M30", "weight": 0.1},
-            "EUR_USD": {"granularity": "M5", "weight": 0.1},
+            "EUR_USD": {"granularity": "M15", "weight": 0.1},
             "HKD_JPY": {"granularity": "M30", "weight": 0.1},
             "GBP_USD": {"granularity": "M30", "weight": 0.1},
             "SGD_JPY": {"granularity": "M30", "weight": 0.1},
             "GBP_JPY": {"granularity": "M30", "weight": 0.1},
             "NZD_JPY": {"granularity": "M30", "weight": 0.1},
             #
-            "EUR_JPY": {"granularity": "M30", "weight": 0.01},
+            "EUR_JPY": {"granularity": "M30", "weight": 0.1},
 
             "SPX500_USD": {"granularity": "M30", "weight": 0.1},
             "NAS100_USD": {"granularity": "M30", "weight": 0.1},
@@ -38,8 +38,8 @@ SETTINGS = {
 
             "USD_MXN": {"granularity": "M30", "weight": 0.1},
             #
-            "SOYBN_USD": {"granularity": "H1", "weight": 0.1, "short_only": False},
-            "CORN_USD": {"granularity": "H1", "weight": 0.1, "short_only": False},
+            "SOYBN_USD": {"granularity": "H1", "weight": 0.1, "short_only": True},
+            "CORN_USD": {"granularity": "H1", "weight": 0.1, "short_only": True},
         },
     "std_lookback": 36,
     "polling_period": 2,

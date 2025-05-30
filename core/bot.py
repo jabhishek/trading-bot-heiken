@@ -164,7 +164,7 @@ class Bot:
             use_limit_order = not is_acceptable_spread
 
             net_strength = get_net_bullish_strength(candles["mid_c"], logger=pair_logger, steps_logger=no_op)
-            pair_logger(f"net_strength: {net_strength}")
+            pair_logger(f"net_strength: {round(net_strength, 2)}")
 
             trigger = self.strategy_manager.check_for_trigger(candles, pair_logger)
 
@@ -172,54 +172,33 @@ class Bot:
                 pair_logger(f"checking for trade - trigger: {trigger}")
                 qty, sl_price, take_profit = self.strategy_manager.check_and_get_trade_qty(candles=candles, trigger=trigger, instrument=instrument,
                                                                                            base_qty=base_qty, pair_logger=pair_logger,
-                                                                                           rejected_logger=rejected_logger)
+                                                                                           rejected_logger=rejected_logger, trend_strength=net_strength)
                 if qty != 0:
-                    trade_logger(f"Placed trade: qty: {qty}, sl_price: {current_price}, take_profit: {current_price}, atr_multiplier: {1}, is_acceptable_spread: {is_acceptable_spread}, use_limit_order: {use_limit_order}")
+                    trade_logger(f"Placed trade: qty: {qty}, trend_strength: {net_strength}")
                     self.base_api.place_order(pair, use_limit_order, qty, instrument, current_price,
                                               get_expiry(pair_config.granularity), use_sl=True,
                                               stop_loss=sl_price, take_profit=take_profit, logger=self.logger.log_message)
             else:
-                pair_logger(f"No check for trade")
+                pair_logger(f"No check for trade. current_units: {current_units}, trigger: {trigger}")
 
         except Exception as e:
             self.logger.log_to_error(f"Error processing {pair}: {str(e)}")
             print(e)
             raise
 
-    def check_and_place_order(self, candles, heikin_ashi, base_qty, instrument,
-                              is_acceptable_spread, pair, pair_config, net_strength,
-                              use_limit_order, pair_logger, rejected_logger, trade_logger):
-        current_price: float = candles.iloc[-1]["mid_c"]
-        atr = candles.iloc[-1][ATR_KEY]
-
-        should_trade, direction, sl_price, take_profit, atr_multiplier = check_new_trade_conditions(candles,
-                                                                                                    heikin_ashi,
-                                                                                                    instrument, atr,
-                                                                                                    pair_logger,
-                                                                                                    trade_logger,
-                                                                                                    rejected_logger)
-        if should_trade and direction is not None:
-            qty = base_qty if direction > 0 else -base_qty
-            trade_logger(
-                f"Placing trade: qty: {qty}, sl_price: {sl_price}, take_profit: {take_profit}, "
-                f"atr_multiplier: {atr_multiplier}, is_acceptable_spread: {is_acceptable_spread}, use_limit_order: {use_limit_order}")
-            self.base_api.place_order(pair, use_limit_order, qty, instrument, current_price,
-                                      get_expiry(pair_config.granularity), use_sl=True,
-                                      stop_loss=sl_price, take_profit=take_profit, logger=self.logger.log_message)
-
     def process_pairs(self, pairs: List[str]) -> None:
         """Process multiple pairs in parallel."""
-        for p in pairs:
-            self.logger.log_to_main(f"Processing pair: {p}")
-            self.process_pair(pair=p)
+        # for p in pairs:
+        #     self.logger.log_to_main(f"Processing pair: {p}")
+        #     self.process_pair(pair=p)
 
-        # with concurrent.futures.ThreadPoolExecutor() as executor:
-        #     futures: List[concurrent.futures.Future] = [executor.submit(self.process_pair, pair) for pair in pairs]
-        #     for future in concurrent.futures.as_completed(futures):
-        #         try:
-        #             future.result()
-        #         except Exception as e:
-        #             self.logger.log_to_error(f"Error in parallel processing: {str(e)}")
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures: List[concurrent.futures.Future] = [executor.submit(self.process_pair, pair) for pair in pairs]
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    future.result()
+                except Exception as e:
+                    self.logger.log_to_error(f"Error in parallel processing: {str(e)}")
 
     def run(self) -> None:
         """Run the main bot loop."""

@@ -98,6 +98,6 @@ def get_net_bullish_strength(price_series, logger, steps_logger):
         steps_logger(f"bearish: current_price < sma_30 and net_trend_30 < 0")
         bearish_strength += INCREMENT
 
-    logger(f"bullish_strength: {bullish_strength}, bearish_strength: {bearish_strength}")
+    logger(f"bullish_strength: {round(bullish_strength, 2)}, bearish_strength: {round(bearish_strength, 2)}")
 
     return bullish_strength - bearish_strength
