@@ -9,6 +9,7 @@ from core.base_api import BaseAPI
 from core.pair_config import PairConfig
 from models.TradeSettings import TradeSettings
 from models.instrument_data import InstrumentData
+from models.open_trade import OpenTrade
 from utils.heiken_ashi import ohlc_to_heiken_ashi
 from utils.stop_loss import get_probable_stop_loss
 
@@ -20,7 +21,7 @@ class StrategyManager:
         self.base_api = base_api
 
     def check_for_trigger(self, candles: pd.DataFrame, logger) -> int:
-        heikin_ashi: pd.DataFrame = ohlc_to_heiken_ashi(candles)
+        heikin_ashi: pd.DataFrame = ohlc_to_heiken_ashi(candles.iloc[-100:].copy())
         last_ha_candle = heikin_ashi.iloc[-1]
         streak: int = last_ha_candle.ha_streak
         trigger: bool = np.abs(streak) <= HEIKEN_ASHI_STREAK and last_ha_candle.ha_open_at_extreme == 1
@@ -39,11 +40,11 @@ class StrategyManager:
         elif signal == -1 and pair_config.long_only:
             rejected_logger(f"long_only: {pair_config.long_only}, skipping trade")
             return 0, None, None
-        elif atr_multiplier > ATR_RISK_FILTER:
-            rejected_logger(f"atr_multiplier: {atr_multiplier} is too high, skipping trade")
-            return 0, None, None
         elif np.sign(signal) != np.sign(trend_strength):
             rejected_logger(f"trend_strength: {round(trend_strength, 2)} does not match signal: {signal}, skipping trade")
+            return 0, None, None
+        elif atr_multiplier > ATR_RISK_FILTER:
+            rejected_logger(f"atr_multiplier: {atr_multiplier} is too high, skipping trade")
             return 0, None, None
         else:
             return signal, sl_price, take_profit
@@ -57,3 +58,13 @@ class StrategyManager:
             return qty, sl_price, take_profit
 
         return 0, None, None
+
+    def check_for_closing_trade(self, t: OpenTrade, ex_rate, atr, trigger, pair_logger):
+        trade_pl = t.unrealizedPL
+        pl_multiple = np.abs(round(t.unrealizedPL * ex_rate / (t.currentUnits * atr), 2))
+
+        pair_logger(f"trade_qty: {t.currentUnits} trade_pl: {trade_pl:.2f}, pl_multiple: {pl_multiple:.2f}")
+        if trigger != 0 and np.sign(trigger) != np.sign(t.currentUnits) and trade_pl > 0 and pl_multiple > 2:
+            return -1 * t.currentUnits / 2
+
+        return 0

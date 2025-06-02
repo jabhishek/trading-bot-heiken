@@ -7,8 +7,7 @@ import pandas as pd
 from typing_extensions import Callable
 
 from api.OandaApi import OandaApi
-from config.constants import ATR_KEY, HEIKEN_ASHI_STREAK, ATR_RISK_FILTER, SMA_PERIOD_LONG, \
-    SMA_PERIOD_SHORT
+from config.constants import ATR_KEY, SMA_PERIOD_LONG, SMA_PERIOD_SHORT
 from core.StrategyManager import StrategyManager
 from core.base_api import BaseAPI
 from core.candle_manager import CandleManager
@@ -16,6 +15,7 @@ from core.log_wrapper import LogManager
 from core.pair_config import PairConfig
 from models.TradeSettings import TradeSettings
 from models.instrument_data import InstrumentData
+from models.open_trade import OpenTrade
 from models.position_data import PositionData
 from utils.get_expiry import get_expiry
 from utils.get_spread_threshold import get_spread_threshold
@@ -99,8 +99,9 @@ class Bot:
             position_data: Optional[PositionData] = self.base_api.get_position(pair)
             current_units = position_data.units if position_data else 0
             pl = position_data.unrealized_pl if position_data else 0
+            ex_rate: float = get_trade_ex_rate(pair, self.api_client)
             pair_logger(
-                f"********* {pair_config.granularity} units: {current_units:.2f}, pl: {pl:.2f} *********")
+                f"********* {pair_config.granularity} *********")
 
             # Get latest candles
             candles: Optional[pd.DataFrame] = self.api_client.get_candles_df(
@@ -117,6 +118,10 @@ class Bot:
             # Calculate indicators
             candles = self.base_api.calculate_indicators(candles, pair_config, pair_logger)
 
+            atr = candles.iloc[-1][ATR_KEY]
+            pl_multiple = np.abs(round(pl * ex_rate / (current_units * atr), 2)) if current_units != 0 else 0
+            pair_logger(f"units: {current_units:.2f}, pl: {pl:.2f}, pl_multiple: {pl_multiple:.2f}")
+
             # Get current price
             current_price: float = candles.iloc[-1]["mid_c"]
 
@@ -130,7 +135,7 @@ class Bot:
             # Calculate exposure metrics
             leverage_ratio: float = self.base_api.calculate_leverage_ratio(pair, instrument, self.trade_settings)
             max_gbp_exposure: float = leverage_ratio * exposure_at_no_leverage
-            ex_rate: float = get_trade_ex_rate(pair, self.api_client)
+
             max_currency_exposure: float = max_gbp_exposure * ex_rate
             pair_logger(
                 f"leverage_ratio: {leverage_ratio}, max_gbp_exposure: {max_gbp_exposure:.2f}, ex_rate: {ex_rate:.5f}, max_currency_exposure: {max_currency_exposure:.2f}")
@@ -166,9 +171,8 @@ class Bot:
                                               get_expiry(pair_config.granularity), use_sl=True,
                                               stop_loss=sl_price, take_profit=take_profit, logger=self.logger.log_message)
             elif current_units != 0:
-                # check for closing positions
-                if trigger != 0 and np.sign(trigger) != np.sign(current_utilisation):
-                    pair_logger(f"checking for book profit - trigger: {trigger}, current_utilisation: {current_utilisation}")
+                # check for closing position
+                self.check_close_trades(pair, candles, pair_config, instrument, ex_rate, pair_logger, current_price, trigger)
 
                 # check for adding to position
                 if trigger != 0 and np.sign(trigger) == np.sign(current_utilisation):
@@ -197,6 +201,19 @@ class Bot:
             self.logger.log_to_error(f"Error processing {pair}: {str(e)}")
             print(e)
             raise
+
+    def check_close_trades(self, pair, candles, pair_config: PairConfig, instrument: InstrumentData,
+                           ex_rate: float, pair_logger, current_price: float, trigger: int):
+        trades: List[OpenTrade] = self.base_api.get_trades(pair)
+        atr = candles.iloc[-1][ATR_KEY]
+        for t in trades:
+            qty_to_close = self.strategy_manager.check_for_closing_trade(t, ex_rate, atr, trigger, pair_logger)
+
+            if qty_to_close != 0:
+                self.base_api.place_order(pair, True, qty_to_close, instrument, current_price,
+                                          get_expiry(pair_config.granularity), use_sl=False,
+                                          logger=self.logger.log_message)
+                pair_logger(f"book profit - trigger: {trigger}, qty_to_trade: {qty_to_close}")
 
     def process_pairs(self, pairs: List[str]) -> None:
         """Process multiple pairs in parallel."""

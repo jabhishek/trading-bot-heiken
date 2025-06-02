@@ -11,8 +11,8 @@ SETTINGS = {
 
             "USD_CHF": {"granularity": "M30", "weight": 0.1},
             "EUR_CHF": {"granularity": "M30", "weight": 0.1},
-            "USD_JPY": {"granularity": "M30", "weight": 0.1},
-            "EUR_USD": {"granularity": "M1", "weight": 0.1, "short_only": False},
+            "USD_JPY": {"granularity": "M15", "weight": 0.1},
+            "EUR_USD": {"granularity": "M15", "weight": 0.1, "short_only": False},
             "HKD_JPY": {"granularity": "M30", "weight": 0.1},
             "GBP_USD": {"granularity": "M30", "weight": 0.1},
             "SGD_JPY": {"granularity": "M30", "weight": 0.1},
