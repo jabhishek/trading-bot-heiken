@@ -21,7 +21,6 @@ def ohlc_to_heiken_ashi(df: pd.DataFrame) -> pd.DataFrame:
         Index is preserved from the original DataFrame.
     """
     # Make a local copy with unified lower-case column names
-    print('candles', df.shape)
     ohlc = df[['time', 'mid_o', 'mid_h', 'mid_l', 'mid_c']].copy()
 
     # Heiken-Ashi close: average of the four prices
