@@ -100,4 +100,4 @@ def get_net_bullish_strength(price_series, logger, steps_logger):
 
     logger(f"bullish_strength: {round(bullish_strength, 2)}, bearish_strength: {round(bearish_strength, 2)}")
 
-    return bullish_strength - bearish_strength
+    return bullish_strength, bearish_strength

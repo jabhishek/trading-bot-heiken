@@ -1,4 +1,5 @@
 from config.constants import INITIAL_SL_PERIOD, TP_MULTIPLE
+from models.open_trade import OpenTrade
 from utils.get_prev_swing import get_previous_swing
 
 
@@ -21,14 +22,11 @@ def get_probable_stop_loss(direction, df, pipLocationPrecision, pair_logger, hei
         donchian_sl = high.iloc[-1]
 
     sl_price = swing_sl if swing_sl is not None else donchian_sl
-    pair_logger(f"Swing SL: {swing_sl}, donchian SL: {donchian_sl}, sl_price: {sl_price}")
 
     if direction > 0:
         sl_price = sl_price - spread
     else:
         sl_price = sl_price + spread
-    pair_logger(f"Adjusted SL Price: {sl_price}")
-
 
     sl_price = round(sl_price, abs(pipLocationPrecision))
     sl_gap = round(abs(price - sl_price), abs(pipLocationPrecision))
@@ -38,6 +36,12 @@ def get_probable_stop_loss(direction, df, pipLocationPrecision, pair_logger, hei
 
     return sl_price, take_profit, sl_gap
 
-def get_trailing_stop_loss(direction, df, pipLocationPrecision):
-    spread = (df["ask_c"] - df["bid_c"]).iloc[-1]
-    price = df["mid_c"].iloc[-1]
+def get_current_stop_value(trade: OpenTrade | None) -> float | None:
+    stop_loss_price: str | None = None
+
+    if trade is not None:
+        stop_loss_order = trade.stopLossOrder
+
+        if stop_loss_order is not None:
+            stop_loss_price = stop_loss_order["price"]
+    return float(stop_loss_price) if stop_loss_price is not None else None

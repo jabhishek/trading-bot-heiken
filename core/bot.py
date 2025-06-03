@@ -24,7 +24,7 @@ from utils.heiken_ashi import ohlc_to_heiken_ashi
 from utils.net_strength import get_net_bullish_strength
 from utils.no_op import no_op
 from utils.sma_bands import check_band_position
-from utils.stop_loss import get_swing_stop_loss
+from utils.stop_loss import get_swing_stop_loss, get_current_stop_value, get_probable_stop_loss
 
 
 def get_additional_qty(ideal_qty, current_position):
@@ -103,8 +103,6 @@ class Bot:
             current_units = position_data.units if position_data else 0
             pl = position_data.unrealized_pl if position_data else 0
             ex_rate: float = get_trade_ex_rate(pair, self.api_client)
-            pair_logger(
-                f"********* {pair_config.granularity} *********")
 
             # Get latest candles
             candles: Optional[pd.DataFrame] = self.api_client.get_candles_df(
@@ -117,6 +115,10 @@ class Bot:
             if candles is None or candles.empty:
                 self.logger.log_to_error(f"No candles found for {pair}")
                 return
+
+            last_candle = candles.iloc[-1]
+            pair_logger(
+                f"********* {pair_config.granularity} {last_candle["time"]}*********")
 
             # Calculate indicators
             candles = self.base_api.calculate_indicators(candles, pair_config, pair_logger)
@@ -155,13 +157,12 @@ class Bot:
             is_acceptable_spread = current_spread <= spread_threshold
             use_limit_order = not is_acceptable_spread
 
-            net_strength = get_net_bullish_strength(candles["mid_c"], logger=pair_logger, steps_logger=no_op)
+            bullish_strength, bearish_strength = get_net_bullish_strength(candles["mid_c"], logger=pair_logger, steps_logger=pair_logger)
+            net_strength = bullish_strength - bearish_strength
+
             qty_at_net_strength = base_qty * net_strength
             pair_logger(f"net_strength: {round(net_strength, 2)}, qty_at_net_strength: {round(qty_at_net_strength, 2)}")
             heikin_ashi: pd.DataFrame = ohlc_to_heiken_ashi(candles.iloc[-100:].copy())
-            direction = np.sign(heikin_ashi.iloc[-1]['ha_streak'])
-            sl = get_swing_stop_loss(direction, heikin_ashi)
-            pair_logger(f"Swing SL: {sl}, direction: {direction}")
 
             trigger = self.strategy_manager.check_for_trigger(heikin_ashi, pair_logger)
 
@@ -176,13 +177,17 @@ class Bot:
                     trade_logger(f"Placed trade: qty: {qty}, trend_strength: {net_strength}")
                     self.base_api.place_order(pair, use_limit_order, qty, instrument, current_price,
                                               get_expiry(pair_config.granularity), use_sl=True,
-                                              stop_loss=sl_price, take_profit=take_profit, logger=self.logger.log_message)
+                                              stop_loss=sl_price, take_profit=None, logger=self.logger.log_message)
             elif current_units != 0:
+                trades: List[OpenTrade] = self.base_api.get_trades(pair)
+                self.update_stop_loss(trades, current_units, candles, instrument, pair_logger, heikin_ashi, trade_logger)
+
                 # check for closing position
-                self.check_close_trades(pair, candles, pair_config, instrument, ex_rate, pair_logger, current_price, trigger, trade_logger)
+                self.check_close_trades(pair, candles, pair_config, instrument,
+                                        ex_rate, pair_logger, current_price, trigger, trade_logger, trades)
 
                 # check for adding to position
-                if trigger != 0 and np.sign(trigger) == np.sign(current_utilisation):
+                if trigger != 0 and np.sign(trigger) == np.sign(current_units):
                     additional_qty = get_additional_qty(qty_at_net_strength, current_units)
                     qty, sl_price, take_profit = self.strategy_manager.check_and_get_trade_qty(candles=candles,
                                                                                                trigger=trigger,
@@ -200,7 +205,6 @@ class Bot:
                                                   get_expiry(pair_config.granularity), use_sl=True,
                                                   stop_loss=sl_price, take_profit=take_profit,
                                                   logger=self.logger.log_message)
-                pass
             else:
                 pair_logger(f"No check for trade. current_units: {current_units}, trigger: {trigger}")
 
@@ -209,9 +213,29 @@ class Bot:
             print(e)
             raise
 
+    def update_stop_loss(self, trades: List[OpenTrade], current_units, candles, instrument, pair_logger, heikin_ashi, trade_logger) -> None:
+        trade_direction = np.sign(current_units)
+        new_fixed_sl, take_profit, sl_gap = get_probable_stop_loss(trade_direction, candles,
+                                                               instrument.pipLocationPrecision, pair_logger, heikin_ashi)
+        for t in trades:
+            current_sl_price, updated_sl = self.get_updated_sl(new_fixed_sl, t)
+
+            if current_sl_price is None or updated_sl != current_sl_price:
+                pair_logger(
+                    f"updating stop_loss {current_sl_price} -> {float(updated_sl)}")
+                self.api_client.update_fixed_stop_loss(t.id, new_fixed_sl, True)
+                pass
+
+    def get_updated_sl(self, new_fixed_sl, t):
+        current_sl_price = get_current_stop_value(t)
+        if t.currentUnits > 0:
+            updated_sl = max(new_fixed_sl, current_sl_price)
+        else:
+            updated_sl = min(new_fixed_sl, current_sl_price)
+        return current_sl_price, updated_sl
+
     def check_close_trades(self, pair, candles, pair_config: PairConfig, instrument: InstrumentData,
-                           ex_rate: float, pair_logger, current_price: float, trigger: int, trade_logger):
-        trades: List[OpenTrade] = self.base_api.get_trades(pair)
+                           ex_rate: float, pair_logger, current_price: float, trigger: int, trade_logger, trades: List[OpenTrade]):
         atr = candles.iloc[-1][ATR_KEY]
         for t in trades:
             qty_to_close = self.strategy_manager.check_for_closing_trade(t, ex_rate, atr, trigger, pair_logger)
@@ -268,4 +292,5 @@ class Bot:
         except Exception as e:
             self.logger.log_to_error(f"Fatal error: {str(e)}")
             raise
+
 
