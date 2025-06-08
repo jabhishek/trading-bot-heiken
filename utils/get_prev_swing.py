@@ -5,6 +5,7 @@ import pandas as pd
 def get_previous_swing(df: pd.DataFrame, trade_direction: int) -> dict | None:
     if df.empty:
         return None
+    df = df.tail(10).copy()
     df = df.reset_index().copy()
     # ------------------------------------------------------------------
     # 1. Determine current trend (sign of the most-recent ha_streak)
@@ -26,6 +27,9 @@ def get_previous_swing(df: pd.DataFrame, trade_direction: int) -> dict | None:
             break
         pass
 
+    if first_opposite_idx is None:
+        print("No opposite trend segment found.")
+        return None
     # ------------------------------------------------------------------
     # 2. Walk backward, collecting contiguous bars of the opposite sign
     # ------------------------------------------------------------------

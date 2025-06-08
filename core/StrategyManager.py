@@ -27,36 +27,42 @@ class StrategyManager:
         return np.sign(streak) if trigger else 0
 
     def _check_for_trading_condition(self, candles: pd.DataFrame, signal: int, instrument: InstrumentData,
-                        pair_logger, rejected_logger, trend_strength, pair_config, heikin_ashi) -> Tuple[int, float | None, float | None]:
-        atr = candles.iloc[-1][ATR_KEY]
+                        pair_logger, rejected_logger, pair_config, heikin_ashi, sma_trend_30, rsi) -> Tuple[int, float | None, float | None]:
+        # atr = candles.iloc[-1][ATR_KEY]
         sl_price, take_profit, sl_gap = get_probable_stop_loss(np.sign(signal), candles,
                                                                instrument.pipLocationPrecision, pair_logger, heikin_ashi)
-        atr_multiplier = sl_gap / atr
+        # atr_multiplier = sl_gap / atr
         if signal == 1 and pair_config.short_only:
             rejected_logger(f"short_only: {pair_config.short_only}, skipping trade")
             return 0, None, None
         elif signal == -1 and pair_config.long_only:
             rejected_logger(f"long_only: {pair_config.long_only}, skipping trade")
             return 0, None, None
-        elif np.sign(signal) != np.sign(trend_strength):
-            rejected_logger(f"trend_strength: {round(trend_strength, 2)} does not match signal: {signal}, skipping trade")
+        elif np.sign(signal) != np.sign(sma_trend_30):
+            rejected_logger(f"sma_trend_30: {sma_trend_30} does not match signal: {signal}, skipping trade")
             return 0, None, None
-        elif atr_multiplier > ATR_RISK_FILTER:
-            rejected_logger(f"atr_multiplier: {atr_multiplier} is too high, skipping trade")
+        elif signal > 0 and rsi > 50:
+            rejected_logger(f"rsi: {rsi} is too high, skipping trade")
             return 0, None, None
+        elif signal < 0 and rsi < 50:
+            rejected_logger(f"rsi: {rsi} is too low, skipping trade")
+            return 0, None, None
+        # elif atr_multiplier > ATR_RISK_FILTER:
+        #     rejected_logger(f"atr_multiplier: {atr_multiplier} is too high, skipping trade")
+        #     return 0, None, None
         else:
             return signal, sl_price, take_profit
 
     def check_and_get_trade_qty(self, candles: pd.DataFrame, trigger: int, instrument: InstrumentData,
-                                qty: float, pair_logger, rejected_logger, trend_strength: float, pair_config: PairConfig, heikin_ashi: pd.DataFrame) -> Tuple[float, float | None, float | None]:
+                                pair_logger, rejected_logger, pair_config: PairConfig,
+                                heikin_ashi: pd.DataFrame, sma_trend_30, rsi: float) -> Tuple[bool, float | None, float | None]:
         revised_signal, sl_price, take_profit = self._check_for_trading_condition(candles, trigger, instrument,
-                                                                                  pair_logger, rejected_logger,
-                                                                                  trend_strength=trend_strength,
-                                                                                  pair_config=pair_config, heikin_ashi=heikin_ashi)
+                                                      pair_logger, rejected_logger, pair_config=pair_config,
+                                                       heikin_ashi=heikin_ashi, sma_trend_30=sma_trend_30, rsi=rsi)
         if revised_signal != 0:
-            return qty, sl_price, take_profit
+            return True, sl_price, take_profit
 
-        return 0, None, None
+        return False, None, None
 
     def check_for_closing_trade(self, t: OpenTrade, ex_rate, atr, trigger, pair_logger):
         trade_pl = t.unrealizedPL

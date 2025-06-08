@@ -13,6 +13,7 @@ from core.base_api import BaseAPI
 from core.candle_manager import CandleManager
 from core.log_wrapper import LogManager
 from core.pair_config import PairConfig
+from indicators.rsi import get_rsi
 from models.TradeSettings import TradeSettings
 from models.instrument_data import InstrumentData
 from models.open_trade import OpenTrade
@@ -21,10 +22,11 @@ from utils.get_expiry import get_expiry
 from utils.get_spread_threshold import get_spread_threshold
 from utils.get_trade_ex_rate import get_trade_ex_rate
 from utils.heiken_ashi import ohlc_to_heiken_ashi
-from utils.net_strength import get_net_bullish_strength
+from utils.net_sma_trend import get_net_trend
+from utils.net_strength import get_net_bullish_strength, _compute_strength
 from utils.no_op import no_op
 from utils.sma_bands import check_band_position
-from utils.stop_loss import get_swing_stop_loss, get_current_stop_value, get_probable_stop_loss
+from utils.stop_loss import get_current_stop_value, get_probable_stop_loss
 
 
 def get_additional_qty(ideal_qty, current_position):
@@ -120,8 +122,37 @@ class Bot:
             pair_logger(
                 f"********* {pair_config.granularity} {last_candle["time"]}*********")
 
+            rsi = get_rsi(candles["mid_c"], 14)
+            pair_logger(f"rsi: {rsi:.2f}")
+
             # Calculate indicators
             candles = self.base_api.calculate_indicators(candles, pair_config, pair_logger)
+
+            candles["sma_200"] = candles["mid_c"].rolling(window=200).mean()
+            candles["sma_100"] = candles["mid_c"].rolling(window=100).mean()
+            candles["sma_50"] = candles["mid_c"].rolling(window=50).mean()
+            candles["sma_30"] = candles["mid_c"].rolling(window=30).mean()
+            candles["sma_10"] = candles["mid_c"].rolling(window=10).mean()
+
+            candles["net_trend_200"] = get_net_trend(candles["mid_c"], 200)
+            candles["net_trend_100"] = get_net_trend(candles["mid_c"], 100)
+            candles["net_trend_50"] = get_net_trend(candles["mid_c"], 50)
+            candles["net_trend_30"] = get_net_trend(candles["mid_c"], 30)
+            net_trend_30: int = candles["net_trend_30"].iloc[-1]
+
+            candles[['bearish_strength', 'bullish_strength']] = candles.apply(_compute_strength, axis=1)
+            # (Optional) inspect the result
+            candles['bearish_strength_s'] = candles['bearish_strength'].ewm(span=10, adjust=False).mean()
+            candles['bullish_strength_s'] = candles['bullish_strength'].ewm(span=10, adjust=False).mean()
+
+            bullish_strength = candles['bullish_strength'].iloc[-1]
+            bearish_strength = candles['bearish_strength'].iloc[-1]
+            net_strength = bullish_strength - bearish_strength
+
+            pair_logger(f"bearish_strength: {np.array(round(candles['bearish_strength'].tail(10), 2))}")
+            pair_logger(f"bearish_strength smoothed: {np.array(round(candles['bearish_strength_s'].tail(10), 2))}")
+            pair_logger(f"bullish_strength: {np.array(round(candles['bullish_strength'].tail(10), 2))}")
+            pair_logger(f"bullish_strength smoothed: {np.array(round(candles['bullish_strength_s'].tail(10), 2))}")
 
             atr = candles.iloc[-1][ATR_KEY]
             pl_multiple = np.abs(round(pl * ex_rate / (current_units * atr), 2)) if current_units != 0 else 0
@@ -157,11 +188,11 @@ class Bot:
             is_acceptable_spread = current_spread <= spread_threshold
             use_limit_order = not is_acceptable_spread
 
-            bullish_strength, bearish_strength = get_net_bullish_strength(candles["mid_c"], logger=pair_logger, steps_logger=pair_logger)
-            net_strength = bullish_strength - bearish_strength
+            # bullish_strength, bearish_strength = get_net_bullish_strength(candles["mid_c"], logger=pair_logger, steps_logger=no_op)
+            # net_strength = bullish_strength - bearish_strength
 
-            qty_at_net_strength = base_qty * net_strength
-            pair_logger(f"net_strength: {round(net_strength, 2)}, qty_at_net_strength: {round(qty_at_net_strength, 2)}")
+            # qty_at_net_strength = base_qty * net_strength
+            pair_logger(f"net_strength: {round(net_strength, 2)}")
             heikin_ashi: pd.DataFrame = ohlc_to_heiken_ashi(candles.iloc[-100:].copy())
 
             trigger = self.strategy_manager.check_for_trigger(heikin_ashi, pair_logger)
@@ -169,18 +200,24 @@ class Bot:
             # look for new positions
             if current_units == 0 and trigger != 0:
                 pair_logger(f"checking for trade - trigger: {trigger}")
-                qty, sl_price, take_profit = self.strategy_manager.check_and_get_trade_qty(candles=candles, trigger=trigger, instrument=instrument,
-                                                                                           qty=qty_at_net_strength, pair_logger=pair_logger,
-                                                                                           rejected_logger=rejected_logger, trend_strength=net_strength,
-                                                                                           pair_config=pair_config, heikin_ashi=heikin_ashi)
-                if qty != 0:
-                    trade_logger(f"Placed trade: qty: {qty}, trend_strength: {net_strength}")
-                    self.base_api.place_order(pair, use_limit_order, qty, instrument, current_price,
-                                              get_expiry(pair_config.granularity), use_sl=True,
-                                              stop_loss=sl_price, take_profit=None, logger=self.logger.log_message)
+                should_trade, sl_price, take_profit = self.strategy_manager.check_and_get_trade_qty(candles=candles, trigger=trigger, instrument=instrument,
+                                                                               pair_logger=pair_logger, rejected_logger=rejected_logger,
+                                                                               pair_config=pair_config, heikin_ashi=heikin_ashi,
+                                                                            sma_trend_30=net_trend_30, rsi=rsi)
+                pair_logger(f"should_trade: {should_trade}, sl_price: {sl_price}, take_profit: {take_profit}")
+                if should_trade:
+                    ideal_qty: float = self.get_ideal_qty(base_qty, bearish_strength, bullish_strength, trigger)
+                    if ideal_qty!= 0:
+                        qty = self.get_trade_qty(base_qty, ideal_qty, pair_logger)
+                        trade_logger(f"Placed trade: qty: {round(qty, 2)}, ideal_qty: {round(ideal_qty, 2)}, bullish_strength: {round(bullish_strength, 2)}, bearish_strength: {round(bearish_strength, 2)}, net_trend_30: {net_trend_30}, rsi: {rsi:.2f}")
+                        self.base_api.place_order(pair, use_limit_order, qty, instrument, current_price,
+                                                  get_expiry(pair_config.granularity), use_sl=True,
+                                                  stop_loss=sl_price, take_profit=None, logger=self.logger.log_message)
+                    else:
+                        rejected_logger(f"ideal_qty is 0, not placing trade. ideal_qty: {round(ideal_qty, 2)}, bearish_strength: {bearish_strength}, bullish_strength: {bullish_strength}, trigger: {trigger}")
             elif current_units != 0:
                 trades: List[OpenTrade] = self.base_api.get_trades(pair)
-                self.update_stop_loss(trades, current_units, candles, instrument, pair_logger, heikin_ashi, trade_logger)
+                self.update_stop_loss(trades, current_units, candles, instrument, pair_logger, heikin_ashi, trade_logger, rejected_logger, pl, pl_multiple)
 
                 # check for closing position
                 self.check_close_trades(pair, candles, pair_config, instrument,
@@ -188,43 +225,64 @@ class Bot:
 
                 # check for adding to position
                 if trigger != 0 and np.sign(trigger) == np.sign(current_units):
-                    additional_qty = get_additional_qty(qty_at_net_strength, current_units)
-                    qty, sl_price, take_profit = self.strategy_manager.check_and_get_trade_qty(candles=candles,
+                    should_trade, sl_price, take_profit = self.strategy_manager.check_and_get_trade_qty(candles=candles,
                                                                                                trigger=trigger,
                                                                                                instrument=instrument,
-                                                                                               qty=additional_qty,
                                                                                                pair_logger=pair_logger,
                                                                                                rejected_logger=rejected_logger,
-                                                                                               trend_strength=net_strength,
-                                                                                               pair_config=pair_config, heikin_ashi=heikin_ashi)
-                    pair_logger(f"checking for adding to position - trigger: {trigger}, current_units: {current_units}, "
-                                f"qty_at_net_strength: {qty_at_net_strength}, additional_qty: {additional_qty}")
-                    if qty != 0:
-                        trade_logger(f"Placed additional trade: qty: {qty}, trend_strength: {net_strength}")
-                        self.base_api.place_order(pair, use_limit_order, qty, instrument, current_price,
-                                                  get_expiry(pair_config.granularity), use_sl=True,
-                                                  stop_loss=sl_price, take_profit=take_profit,
-                                                  logger=self.logger.log_message)
+                                                                                               pair_config=pair_config, heikin_ashi=heikin_ashi, sma_trend_30=net_trend_30, rsi=rsi)
+                    if should_trade:
+                        ideal_qty = self.get_ideal_qty(base_qty, bearish_strength, bullish_strength, trigger)
+                        spare_qty: float = get_additional_qty(ideal_qty, current_units)
+                        pair_logger(f"ideal_qty: {round(ideal_qty, 2)}, spare_qty: {round(spare_qty, 2)}, current_units: {round(current_units, 2)}")
+                        if spare_qty != 0:
+                            additional_qty = self.get_trade_qty(base_qty, spare_qty, pair_logger)
+                            pair_logger(
+                                f"additional_qty: {round(additional_qty, 2)}, ideal_qty: {round(ideal_qty, 2)}, spare_qty: {round(spare_qty, 2)}")
+
+                            trade_logger(f"Placed additional trade: qty: {round(additional_qty, 2)}, bullish_strength: {round(bullish_strength, 2)}, bearish_strength: {round(bearish_strength, 2)}, net_trend_30: {net_trend_30}, rsi: {rsi:.2f}")
+                            self.base_api.place_order(pair, use_limit_order, additional_qty, instrument, current_price,
+                                                      get_expiry(pair_config.granularity), use_sl=True,
+                                                      stop_loss=sl_price, take_profit=None,
+                                                      logger=self.logger.log_message)
+                        else:
+                            rejected_logger(f"spare_qty is 0, not placing additional trade. ideal_qty: {round(ideal_qty, 2)}, spare_qty: {round(spare_qty, 2)}, current_units: {round(current_units, 2)}, trigger: {trigger}")
             else:
-                pair_logger(f"No check for trade. current_units: {current_units}, trigger: {trigger}")
+                pair_logger(f"No check for trade. current_units: {round(current_units, 2)}, trigger: {trigger}")
 
         except Exception as e:
             self.logger.log_to_error(f"Error processing {pair}: {str(e)}")
             print(e)
             raise
 
-    def update_stop_loss(self, trades: List[OpenTrade], current_units, candles, instrument, pair_logger, heikin_ashi, trade_logger) -> None:
+    def get_trade_qty(self, base_qty, spare_qty, pair_logger):
+        max_qty = base_qty * 0.5
+        pair_logger(f"max_qty: {round(max_qty, 2)}, spare_qty: {round(spare_qty, 2)}")
+        additional_qty = np.sign(spare_qty) * min(abs(spare_qty), max_qty)
+        return additional_qty
+
+    def get_ideal_qty(self, base_qty, bearish_strength, bullish_strength, trigger) -> float:
+        qty = base_qty * bullish_strength if trigger > 0 else -1 * base_qty * bearish_strength
+        return qty
+
+    def update_stop_loss(self, trades: List[OpenTrade], current_units, candles, instrument, pair_logger, heikin_ashi, trade_logger, rejected_logger, pl, pl_multiple) -> None:
         trade_direction = np.sign(current_units)
         new_fixed_sl, take_profit, sl_gap = get_probable_stop_loss(trade_direction, candles,
                                                                instrument.pipLocationPrecision, pair_logger, heikin_ashi)
         for t in trades:
+            # atr = candles.iloc[-1][ATR_KEY]
+            # pl = t.unrealizedPL
+            # pl_multiple = np.abs(round(pl * ex_rate / (t.currentUnits * atr), 2)) if t.currentUnits != 0 else 0
+
             current_sl_price, updated_sl = self.get_updated_sl(new_fixed_sl, t)
 
             if current_sl_price is None or updated_sl != current_sl_price:
-                pair_logger(
-                    f"updating stop_loss {current_sl_price} -> {float(updated_sl)}")
-                self.api_client.update_fixed_stop_loss(t.id, new_fixed_sl, True)
-                pass
+                if pl > 0 and pl_multiple > 1:
+                    pair_logger(
+                        f"updating stop_loss {current_sl_price} -> {float(updated_sl)}, pl: {pl:.2f}, pl_multiple: {pl_multiple:.2f}")
+                    self.api_client.update_fixed_stop_loss(t.id, new_fixed_sl, True)
+                else:
+                    pair_logger(f"not updating stop_loss, pl: {pl:.2f}, pl_multiple: {pl_multiple:.2f}, qty: {t.currentUnits:.2f}")
 
     def get_updated_sl(self, new_fixed_sl, t):
         current_sl_price = get_current_stop_value(t)
@@ -274,8 +332,8 @@ class Bot:
                     tm_min = time.localtime().tm_min
                     tm_sec = time.localtime().tm_sec
 
-                    if tm_sec % 5 == 3:
-                        print(f"{tm_mday} {tm_hour}:{tm_min}:{tm_sec}")
+                    if tm_sec % 5 < 2:
+                        print(f"---- {tm_mday} {tm_hour}:{tm_min}:{tm_sec}")
                         # Check for new candles
                         pairs_with_new_candles: List[str] = self.candle_manager.update_timings()
 
