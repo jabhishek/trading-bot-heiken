@@ -1,9 +1,19 @@
 import pandas as pd
 
 
-def compute_atr(df: pd.DataFrame, close_field="mid_c", high_field="mid_h", low_field="mid_l", period=14):
+def compute_atr(df: pd.DataFrame, close_field: str = "mid_c", high_field: str = "mid_h", low_field: str = "mid_l", period: int = 14) -> pd.Series:
     """
     Computes the Average True Range (ATR) over the specified period.
+    
+    Args:
+        df (pd.DataFrame): DataFrame containing price data
+        close_field (str): Column name for close prices
+        high_field (str): Column name for high prices
+        low_field (str): Column name for low prices
+        period (int): Period for ATR calculation
+        
+    Returns:
+        pd.Series: ATR values
     """
     prev_c = df[close_field].shift(1)
     tr1 = df[high_field] - df[low_field]

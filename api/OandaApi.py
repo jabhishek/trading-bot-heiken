@@ -1,5 +1,6 @@
 import datetime
 import math
+from typing import Dict, Any, List, Tuple
 
 import numpy as np
 import requests
@@ -84,16 +85,16 @@ class OandaApi:
             print("ERROR get_account_ep()", data)
             return None
 
-    def get_account_summary(self):
+    def get_account_summary(self) -> Dict[str, Any]:
         return self.get_account_ep("summary", "account")
 
-    def get_account_details(self):
+    def get_account_details(self) -> Dict[str, Any]:
         return self.get_account_ep("", "account")
 
-    def get_account_instruments(self):
+    def get_account_instruments(self) -> List[Dict[str, Any]]:
         return self.get_account_ep("instruments", "instruments")
 
-    def get_instrument_position(self, instrument):
+    def get_instrument_position(self, instrument: str) -> Tuple[float, float] | Tuple[None, None]:
         url = f"accounts/{self.account_id}/positions/{instrument}"
         ok, data = self.make_request(url)
 

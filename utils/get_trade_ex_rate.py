@@ -1,4 +1,7 @@
-def get_trade_ex_rate(pair, api):
+from api.OandaApi import OandaApi
+
+
+def get_trade_ex_rate(pair: str, api: OandaApi):
     base_currency, traded_currency = pair.split('_')
     ex_rate = 1
     if traded_currency != 'GBP':

@@ -1,10 +1,11 @@
 import pandas as pd
+from typing import Tuple
 
 from api.OandaApi import OandaApi
 from models.api_price import ApiPrice
 
 
-def get_spread_threshold(pair: str, df: pd.DataFrame, api: OandaApi, logger) -> (float, float):
+def get_spread_threshold(pair: str, df: pd.DataFrame, api: OandaApi, logger: Callable[[str], None]) -> Tuple[float, float, float]:
     spread_series = df["ask_c"] - df["bid_c"]
     spread_series.dropna(inplace=True)
 

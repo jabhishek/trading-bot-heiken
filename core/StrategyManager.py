@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Callable, Optional
 
 import numpy as np
 import pandas as pd
@@ -19,19 +19,33 @@ class StrategyManager:
         self.trade_settings = trade_settings
         self.base_api = base_api
 
-    def check_for_trigger(self, heikin_ashi: pd.DataFrame, logger) -> int:
+    def check_for_trigger(self, heikin_ashi: pd.DataFrame, logger: Callable[[str], None]) -> int:
         last_ha_candle = heikin_ashi.iloc[-1]
         streak: int = last_ha_candle.ha_streak
         trigger: bool = np.abs(streak) <= HEIKEN_ASHI_STREAK and last_ha_candle.ha_open_at_extreme == 1
         logger(f"streak: {streak}, trigger: {trigger}")
         return np.sign(streak) if trigger else 0
 
-    def _check_for_trading_condition(self, candles: pd.DataFrame, signal: int, instrument: InstrumentData,
-                        pair_logger, rejected_logger, pair_config, heikin_ashi, sma_trend_30, rsi) -> Tuple[int, float | None, float | None]:
-        # atr = candles.iloc[-1][ATR_KEY]
-        sl_price, take_profit, sl_gap = get_probable_stop_loss(np.sign(signal), candles,
-                                                               instrument.pipLocationPrecision, pair_logger, heikin_ashi)
-        # atr_multiplier = sl_gap / atr
+    def _check_for_trading_condition(
+        self, 
+        candles: pd.DataFrame, 
+        signal: int, 
+        instrument: InstrumentData,
+        pair_logger: Callable[[str], None], 
+        rejected_logger: Callable[[str], None], 
+        pair_config: PairConfig, 
+        heikin_ashi: pd.DataFrame, 
+        sma_trend_30: int, 
+        rsi: float
+    ) -> Tuple[int, Optional[float], Optional[float]]:
+        sl_price, take_profit, sl_gap = get_probable_stop_loss(
+            np.sign(signal), 
+            candles,
+            instrument.pipLocationPrecision, 
+            pair_logger, 
+            heikin_ashi
+        )
+
         if signal == 1 and pair_config.short_only:
             rejected_logger(f"short_only: {pair_config.short_only}, skipping trade")
             return 0, None, None
@@ -47,24 +61,45 @@ class StrategyManager:
         elif signal < 0 and rsi < 50:
             rejected_logger(f"rsi: {rsi} is too low, skipping trade")
             return 0, None, None
-        # elif atr_multiplier > ATR_RISK_FILTER:
-        #     rejected_logger(f"atr_multiplier: {atr_multiplier} is too high, skipping trade")
-        #     return 0, None, None
         else:
             return signal, sl_price, take_profit
 
-    def check_and_get_trade_qty(self, candles: pd.DataFrame, trigger: int, instrument: InstrumentData,
-                                pair_logger, rejected_logger, pair_config: PairConfig,
-                                heikin_ashi: pd.DataFrame, sma_trend_30, rsi: float) -> Tuple[bool, float | None, float | None]:
-        revised_signal, sl_price, take_profit = self._check_for_trading_condition(candles, trigger, instrument,
-                                                      pair_logger, rejected_logger, pair_config=pair_config,
-                                                       heikin_ashi=heikin_ashi, sma_trend_30=sma_trend_30, rsi=rsi)
+    def check_and_get_trade_qty(
+        self, 
+        candles: pd.DataFrame, 
+        trigger: int, 
+        instrument: InstrumentData,
+        pair_logger: Callable[[str], None], 
+        rejected_logger: Callable[[str], None], 
+        pair_config: PairConfig,
+        heikin_ashi: pd.DataFrame, 
+        sma_trend_30: int, 
+        rsi: float
+    ) -> Tuple[bool, Optional[float], Optional[float]]:
+        revised_signal, sl_price, take_profit = self._check_for_trading_condition(
+            candles, 
+            trigger, 
+            instrument,
+            pair_logger, 
+            rejected_logger, 
+            pair_config=pair_config,
+            heikin_ashi=heikin_ashi, 
+            sma_trend_30=sma_trend_30, 
+            rsi=rsi
+        )
         if revised_signal != 0:
             return True, sl_price, take_profit
 
         return False, None, None
 
-    def check_for_closing_trade(self, t: OpenTrade, ex_rate, atr, trigger, pair_logger):
+    def check_for_closing_trade(
+        self, 
+        t: OpenTrade, 
+        ex_rate: float, 
+        atr: float, 
+        trigger: int, 
+        pair_logger: Callable[[str], None]
+    ) -> float:
         trade_pl = t.unrealizedPL
         pl_multiple = np.abs(round(t.unrealizedPL * ex_rate / (t.currentUnits * atr), 2))
 

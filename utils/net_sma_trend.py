@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 
-def get_trend(series: pd.Series, horizon):
+def get_trend(series: pd.Series, horizon: int) -> pd.Series:
     df = pd.DataFrame(index=series.index)
     df["sma"] = series.rolling(window=horizon, min_periods=horizon).mean()
     df["diff"] = df["sma"].diff()

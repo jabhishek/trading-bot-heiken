@@ -29,7 +29,7 @@ from utils.sma_bands import check_band_position
 from utils.stop_loss import get_current_stop_value, get_probable_stop_loss
 
 
-def get_additional_qty(ideal_qty, current_position):
+def get_additional_qty(ideal_qty: float, current_position: float) -> float:
     if np.sign(ideal_qty) != np.sign(current_position):
         return 0
 

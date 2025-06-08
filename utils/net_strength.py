@@ -32,6 +32,7 @@ def get_net_strength_for_row(current_price, net_trend_100, net_trend_200, net_tr
                              sma_100, sma_200, sma_30, sma_50, steps_logger=no_op, logger=no_op):
     bullish_strength = 0
     bearish_strength = 0
+    # sma_200
     if net_trend_200 > 0:
         steps_logger(f"bullish: net_trend_200 > 0")
         bullish_strength += 2 * INCREMENT
@@ -50,6 +51,8 @@ def get_net_strength_for_row(current_price, net_trend_100, net_trend_200, net_tr
     if current_price < sma_200 and net_trend_200 < 0:
         steps_logger(f"bearish: current_price < sma_200 and net_trend_200 < 0")
         bearish_strength += 2 * INCREMENT
+
+    # sma 100
     if net_trend_100 > 0:
         steps_logger(f"bullish: net_trend_100 > 0")
         bullish_strength += INCREMENT
@@ -68,6 +71,8 @@ def get_net_strength_for_row(current_price, net_trend_100, net_trend_200, net_tr
     if current_price < sma_100 and net_trend_100 < 0:
         steps_logger(f"bearish: current_price < sma_100 and net_trend_100 < 0")
         bearish_strength += INCREMENT
+
+    # sma 50
     if net_trend_50 > 0:
         steps_logger(f"bullish: net_trend_50 > 0")
         bullish_strength += 1.25 * INCREMENT
@@ -86,6 +91,8 @@ def get_net_strength_for_row(current_price, net_trend_100, net_trend_200, net_tr
     elif current_price < sma_50 and net_trend_50 < 0:
         steps_logger(f"bearish: current_price < sma_50 and net_trend_50 < 0")
         bearish_strength += 1.25 * INCREMENT
+
+    # sma 30
     if net_trend_30 > 0:
         steps_logger(f"bullish: net_trend_30 > 0")
         bullish_strength += INCREMENT
