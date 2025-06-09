@@ -8,7 +8,7 @@ def get_swing_stop_loss(direction, df) -> float | None:
     return x['price'] if x is not None else None
 
 def get_probable_stop_loss(direction, df, pipLocationPrecision, pair_logger, heikin_ashi):
-    swing_sl = get_swing_stop_loss(direction, heikin_ashi)
+    # swing_sl = get_swing_stop_loss(direction, heikin_ashi)
 
     spread = (df["ask_c"] - df["bid_c"]).iloc[-1]
     price = df["mid_c"].iloc[-1]
@@ -21,7 +21,8 @@ def get_probable_stop_loss(direction, df, pipLocationPrecision, pair_logger, hei
     else:
         donchian_sl = high.iloc[-1]
 
-    sl_price = swing_sl if swing_sl is not None else donchian_sl
+    # sl_price = swing_sl if swing_sl is not None else donchian_sl
+    sl_price = donchian_sl
 
     if direction > 0:
         sl_price = sl_price - spread

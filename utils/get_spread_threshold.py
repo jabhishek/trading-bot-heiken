@@ -1,5 +1,5 @@
 import pandas as pd
-from typing import Tuple
+from typing import Tuple, Callable
 
 from api.OandaApi import OandaApi
 from models.api_price import ApiPrice

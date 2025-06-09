@@ -144,15 +144,19 @@ class Bot:
             # (Optional) inspect the result
             candles['bearish_strength_s'] = candles['bearish_strength'].ewm(span=10, adjust=False).mean()
             candles['bullish_strength_s'] = candles['bullish_strength'].ewm(span=10, adjust=False).mean()
+            candles['net_strength'] = candles['bullish_strength'] - candles['bearish_strength']
+            candles['net_strength_s'] = candles['bullish_strength_s'] - candles['bearish_strength_s']
 
             bullish_strength = candles['bullish_strength'].iloc[-1]
             bearish_strength = candles['bearish_strength'].iloc[-1]
             net_strength = bullish_strength - bearish_strength
 
             pair_logger(f"bearish_strength: {np.array(round(candles['bearish_strength'].tail(10), 2))}")
-            pair_logger(f"bearish_strength smoothed: {np.array(round(candles['bearish_strength_s'].tail(10), 2))}")
             pair_logger(f"bullish_strength: {np.array(round(candles['bullish_strength'].tail(10), 2))}")
+            pair_logger(f"bearish_strength smoothed: {np.array(round(candles['bearish_strength_s'].tail(10), 2))}")
             pair_logger(f"bullish_strength smoothed: {np.array(round(candles['bullish_strength_s'].tail(10), 2))}")
+            pair_logger(f"net_strength: {np.array(round(candles['net_strength'].tail(10), 2))}")
+            pair_logger(f"net_strength smoothed: {np.array(round(candles['net_strength_s'].tail(10), 2))}")
 
             atr = candles.iloc[-1][ATR_KEY]
             pl_multiple = np.abs(round(pl * ex_rate / (current_units * atr), 2)) if current_units != 0 else 0
@@ -265,7 +269,8 @@ class Bot:
         qty = base_qty * bullish_strength if trigger > 0 else -1 * base_qty * bearish_strength
         return qty
 
-    def update_stop_loss(self, trades: List[OpenTrade], current_units, candles, instrument, pair_logger, heikin_ashi, trade_logger, rejected_logger, pl, pl_multiple) -> None:
+    def update_stop_loss(self, trades: List[OpenTrade], current_units, candles, instrument, pair_logger, heikin_ashi,
+                         trade_logger, rejected_logger, pl, pl_multiple) -> None:
         trade_direction = np.sign(current_units)
         new_fixed_sl, take_profit, sl_gap = get_probable_stop_loss(trade_direction, candles,
                                                                instrument.pipLocationPrecision, pair_logger, heikin_ashi)

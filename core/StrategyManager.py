@@ -55,10 +55,10 @@ class StrategyManager:
         elif np.sign(signal) != np.sign(sma_trend_30):
             rejected_logger(f"sma_trend_30: {sma_trend_30} does not match signal: {signal}, skipping trade")
             return 0, None, None
-        elif signal > 0 and rsi > 50:
+        elif signal > 0 and rsi > 70:
             rejected_logger(f"rsi: {rsi} is too high, skipping trade")
             return 0, None, None
-        elif signal < 0 and rsi < 50:
+        elif signal < 0 and rsi < 30:
             rejected_logger(f"rsi: {rsi} is too low, skipping trade")
             return 0, None, None
         else:
