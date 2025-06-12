@@ -1,4 +1,4 @@
-from config.constants import INITIAL_SL_PERIOD, TP_MULTIPLE
+from config.constants import INITIAL_SL_PERIOD, TP_MULTIPLE, ATR_KEY
 from models.open_trade import OpenTrade
 from utils.get_prev_swing import get_previous_swing
 
@@ -7,10 +7,9 @@ def get_swing_stop_loss(direction, df) -> float | None:
     x = get_previous_swing(df, direction)
     return x['price'] if x is not None else None
 
-def get_probable_stop_loss(direction, df, pipLocationPrecision, pair_logger, heikin_ashi):
-    # swing_sl = get_swing_stop_loss(direction, heikin_ashi)
-
-    spread = (df["ask_c"] - df["bid_c"]).iloc[-1]
+def get_probable_stop_loss(direction, df, pipLocationPrecision):
+    atr = df[ATR_KEY].iloc[-1]
+    # spread = (df["ask_c"] - df["bid_c"]).iloc[-1]
     price = df["mid_c"].iloc[-1]
 
     high = df["mid_h"].rolling(window=INITIAL_SL_PERIOD).max()
@@ -25,9 +24,9 @@ def get_probable_stop_loss(direction, df, pipLocationPrecision, pair_logger, hei
     sl_price = donchian_sl
 
     if direction > 0:
-        sl_price = sl_price - spread
+        sl_price = sl_price - atr
     else:
-        sl_price = sl_price + spread
+        sl_price = sl_price + atr
 
     sl_price = round(sl_price, abs(pipLocationPrecision))
     sl_gap = round(abs(price - sl_price), abs(pipLocationPrecision))

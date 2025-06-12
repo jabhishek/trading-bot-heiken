@@ -17,7 +17,8 @@ class ApiPrice:
         self.instrument = api_ob['instrument']
         self.ask = float(api_ob['asks'][0]['price'])
         self.bid = float(api_ob['bids'][0]['price'])
-        self.price = float(api_ob['bids'][0]['price'])
+        self.price = (self.ask + self.bid) / 2
+
 
         base_instrument = self.instrument.split('_')[1]
         for hc in homeConversions:

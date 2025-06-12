@@ -114,7 +114,7 @@ def get_net_strength_for_row(current_price, net_trend_100, net_trend_200, net_tr
     logger(f"bullish_strength: {round(bullish_strength, 2)}, bearish_strength: {round(bearish_strength, 2)}")
     return bearish_strength, bullish_strength
 
-def _compute_strength(row):
+def compute_strength(row):
     """Return a Series with bearish & bullish strength for a single row."""
     return pd.Series(
         get_net_strength_for_row(

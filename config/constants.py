@@ -7,7 +7,7 @@ SMA_S_KEY = "sma_s"
 ATR_KEY = "atr"
 
 TP_MULTIPLE = 3
-INITIAL_SL_PERIOD = 10
+INITIAL_SL_PERIOD = 20
 
 PERIODS_IN_YEAR = {
     "D": 256,

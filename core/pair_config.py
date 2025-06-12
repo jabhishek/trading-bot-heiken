@@ -24,3 +24,6 @@ class PairConfig:
 
     def get_raw_settings(self) -> Dict[str, Any]:
         return self.settings
+
+    def __repr__(self) -> str:
+        return f"PairConfig(pair={self.pair}, settings={self.settings})"
