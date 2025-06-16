@@ -1,5 +1,5 @@
 import time
-from typing import Any, List, Optional, Dict, Tuple
+from typing import Any, List, Optional, Dict
 import concurrent.futures
 
 import numpy as np
@@ -17,7 +17,6 @@ from indicators.rsi import get_rsi
 from indicators.trix import calculate_trix, convert_series_to_signals
 from models.TradeSettings import TradeSettings
 from models.instrument_data import InstrumentData
-from models.open_trade import OpenTrade
 from models.position_data import PositionData
 from utils.get_expiry import get_expiry
 from utils.get_spread_threshold import get_spread_threshold
@@ -26,7 +25,6 @@ from utils.heiken_ashi import ohlc_to_heiken_ashi
 from utils.net_sma_trend import get_net_trend
 from utils.net_strength import compute_strength
 from utils.sma_bands import check_band_position
-from utils.stop_loss import get_current_stop_value, get_probable_stop_loss
 
 
 def get_additional_qty(ideal_qty: float, current_position: float) -> float:
@@ -41,17 +39,14 @@ def get_additional_qty(ideal_qty: float, current_position: float) -> float:
 
 def get_reduce_qty(ideal_qty: float, current_position: float, pair_logger) -> float:
     pair_logger(f"ideal_qty: {ideal_qty}, current_position: {current_position}")
-    if np.sign(ideal_qty) != np.sign(current_position):
-        pair_logger(f"ideal_qty: {ideal_qty} has different sign than current_position: {current_position}, not reducing")
-        return 0
 
     diff = ideal_qty - current_position
-    pair_logger(f"diff: {diff}")
+    pair_logger(f"diff: {round(diff, 2)}")
     if np.sign(diff) == np.sign(current_position):
         pair_logger(f"diff: {diff} has same sign as current_position: {current_position}, not reducing")
         return 0
 
-    pair_logger(f"reducing position by: {diff}")
+    pair_logger(f"reducing position by: {round(diff, 2)}")
     return diff
 
 
@@ -183,11 +178,6 @@ class Bot:
 
             is_acceptable_spread = current_spread <= spread_threshold
 
-
-            # bullish_strength, bearish_strength = get_net_bullish_strength(candles["mid_c"], logger=pair_logger, steps_logger=no_op)
-            # net_strength = bullish_strength - bearish_strength
-
-            # qty_at_net_strength = base_qty * net_strength
             pair_logger(f"net_strength: {round(net_strength, 2)}")
             heikin_ashi: pd.DataFrame = ohlc_to_heiken_ashi(candles.iloc[-100:].copy())
 
@@ -198,6 +188,10 @@ class Bot:
 
             # look for new positions
             if current_units == 0 and trigger != 0:
+                if abs(net_strength) > 0.5:
+                    rejected_logger(
+                        f"net_strength: {round(net_strength, 2)} is too high, not placing trade. trigger: {trigger}")
+                    return
                 pair_logger(f"checking for trade - trigger: {trigger}")
                 should_trade = self.strategy_manager.check_and_get_trade_qty(trigger=trigger,
                                                                              rejected_logger=rejected_logger,
@@ -206,11 +200,6 @@ class Bot:
                                                                              rsi=rsi,
                                                                              net_strength=net_strength)
                 if should_trade:
-                    sl_price, take_profit, sl_gap = get_probable_stop_loss(np.sign(trigger), candles,
-                                                                           instrument.pipLocationPrecision)
-                    pair_logger(f"should_trade: {should_trade}, sl_price: {sl_price}, take_profit: {take_profit}")
-
-
                     if ideal_qty != 0:
                         qty = self.get_trade_qty(base_qty, ideal_qty, pair_logger)
                         trade_logger(
@@ -218,15 +207,11 @@ class Bot:
                         use_limit_order = not is_acceptable_spread
                         self.base_api.place_order(pair, use_limit_order, qty, instrument, live_price,
                                                   get_expiry(pair_config.granularity), use_sl=True,
-                                                  stop_loss=sl_price, take_profit=None, logger=self.logger.log_message, tag=f"strength_{net_strength}")
+                                                  stop_loss=None, take_profit=None, logger=self.logger.log_message, tag=f"strength_{net_strength}")
                     else:
                         rejected_logger(
                             f"ideal_qty is 0, not placing trade. ideal_qty: {round(ideal_qty, 2)}, net_strength: {net_strength}, trigger: {trigger}")
             elif current_units != 0:
-
-                trades: List[OpenTrade] = self.base_api.get_trades(pair)
-                self.update_stop_loss(trades, current_units, candles, instrument, pair_logger)
-
                 last_ha_candle = heikin_ashi.iloc[-1]
                 streak: int = last_ha_candle.ha_streak
                 should_check_for_reduce = np.sign(streak) != np.sign(current_units)
@@ -234,7 +219,7 @@ class Bot:
 
                 if should_check_for_reduce:
                     self.check_for_reduce(current_units, ideal_qty, instrument, is_acceptable_spread, live_price,
-                                          min_qty, pair, pair_config, pair_logger, streak, trade_logger, trigger)
+                                          min_qty, pair, pair_config, pair_logger, streak, trade_logger, trigger, tag=f"strength_{net_strength}")
 
                 # check for adding to position
                 if trigger != 0 and np.sign(trigger) == np.sign(current_units):
@@ -245,9 +230,6 @@ class Bot:
                                                                                  rsi=rsi,
                                                                                  net_strength=net_strength)
                     if should_trade:
-                        sl_price, take_profit, sl_gap = get_probable_stop_loss(np.sign(trigger), candles,
-                                                                               instrument.pipLocationPrecision)
-
                         spare_qty: float = get_additional_qty(ideal_qty, current_units)
                         less_than_min = abs(spare_qty) < min_qty
                         use_limit_order = not is_acceptable_spread or less_than_min
@@ -263,7 +245,7 @@ class Bot:
                                 f"Placed additional trade: qty: {round(additional_qty, 2)}, net_strength: {round(net_strength, 2)}, net_trend_30: {net_trend_30}, rsi: {rsi:.2f}, min_qty: {min_qty}, use_limit_order: {use_limit_order}")
                             self.base_api.place_order(pair, use_limit_order, additional_qty, instrument, live_price,
                                                       get_expiry(pair_config.granularity), use_sl=True,
-                                                      stop_loss=sl_price, take_profit=None,
+                                                      stop_loss=None, take_profit=None,
                                                       logger=self.logger.log_message, tag=f"strength_{net_strength}")
                         else:
                             pair_logger(
@@ -277,18 +259,18 @@ class Bot:
             raise
 
     def check_for_reduce(self, current_units, ideal_qty, instrument, is_acceptable_spread, live_price, min_qty, pair,
-                         pair_config, pair_logger, streak, trade_logger, trigger):
+                         pair_config, pair_logger, streak, trade_logger, trigger, tag: str):
         qty_to_sell = get_reduce_qty(ideal_qty, current_units, pair_logger)
         less_than_min = abs(qty_to_sell) < min_qty
         use_limit_order = not is_acceptable_spread or less_than_min
         pair_logger(
-            f"qty_to_sell: {round(qty_to_sell, 2)} ({abs(qty_to_sell)}), min_qty: {round(min_qty, 2)}, less_than_min: {less_than_min}, use_limit_order: {use_limit_order}")
+            f"qty_to_sell: {round(qty_to_sell, 2)}, min_qty: {round(min_qty, 2)}, less_than_min: {less_than_min}, use_limit_order: {use_limit_order}")
         if qty_to_sell != 0:
             trade_logger(
                 f"reducing position - streak: {streak}, qty_to_sell: {qty_to_sell}, ideal_qty: {ideal_qty}, current_units: {current_units}, use_limit_order: {use_limit_order}, min_qty: {min_qty}")
             self.base_api.place_order(pair, use_limit_order, qty_to_sell, instrument, live_price,
                                       get_expiry(pair_config.granularity),
-                                      logger=self.logger.log_message)
+                                      logger=self.logger.log_message, tag=tag)
         else:
             pair_logger(
                 f"qty_to_sell is 0, not placing reduce trade. ideal_qty: {round(ideal_qty, 2)}, current_units: {round(current_units, 2)}, trigger: {trigger}")
@@ -329,10 +311,6 @@ class Bot:
         bearish_strength = candles['bearish_strength_s'].iloc[-1]
         net_strength = bullish_strength - bearish_strength
 
-        # pair_logger(f"bearish_strength: {np.array(round(candles['bearish_strength'].tail(10), 2))}")
-        # pair_logger(f"bullish_strength: {np.array(round(candles['bullish_strength'].tail(10), 2))}")
-        # pair_logger(f"bearish_strength smoothed: {np.array(round(candles['bearish_strength_s'].tail(10), 2))}")
-        # pair_logger(f"bullish_strength smoothed: {np.array(round(candles['bullish_strength_s'].tail(10), 2))}")
         pair_logger(f"net_strength: {np.array(round(candles['net_strength'].tail(10), 2))}")
         pair_logger(f"net_strength smoothed: {np.array(candles['net_strength_s'].tail(10))}")
         return net_strength, net_trend_30
@@ -345,44 +323,6 @@ class Bot:
 
     def get_ideal_qty(self, base_qty, net_strength) -> float:
         return base_qty * net_strength
-
-    def update_stop_loss(self, trades: List[OpenTrade], current_units, candles, instrument, pair_logger) -> None:
-        trade_direction = np.sign(current_units)
-        new_fixed_sl, take_profit, sl_gap = get_probable_stop_loss(trade_direction, candles,
-                                                                   instrument.pipLocationPrecision)
-
-        for t in trades:
-            current_sl_price, updated_sl = self.get_updated_sl(new_fixed_sl, t, pair_logger)
-
-            if current_sl_price is None or updated_sl != current_sl_price:
-                pair_logger(
-                    f"updating stop_loss {current_sl_price} -> {float(updated_sl)}")
-                self.api_client.update_fixed_stop_loss(t.id, new_fixed_sl, True)
-
-    def get_updated_sl(self, new_fixed_sl, t, pair_logger) -> Tuple[Optional[float], float]:
-        current_sl_price = get_current_stop_value(t)
-        if current_sl_price is None:
-            pair_logger(f"current_sl_price is None, setting updated_sl to new_fixed_sl: {new_fixed_sl}")
-            return None, new_fixed_sl
-
-        if t.currentUnits > 0:
-            updated_sl = max(new_fixed_sl, current_sl_price)
-        else:
-            updated_sl = min(new_fixed_sl, current_sl_price)
-        return current_sl_price, updated_sl
-
-    # def check_close_trades(self, pair, candles, pair_config: PairConfig, instrument: InstrumentData,
-    #                        ex_rate: float, pair_logger, current_price: float, trigger: int, trade_logger,
-    #                        trades: List[OpenTrade]):
-    #     atr = candles.iloc[-1][ATR_KEY]
-    #     for t in trades:
-    #         qty_to_close = self.strategy_manager.check_for_closing_trade(t, ex_rate, atr, trigger, pair_logger)
-    #
-    #         if qty_to_close != 0:
-    #             self.base_api.place_order(pair, True, qty_to_close, instrument, current_price,
-    #                                       get_expiry(pair_config.granularity), use_sl=False,
-    #                                       logger=self.logger.log_message)
-    #             trade_logger(f"book profit - trigger: {trigger}, qty_to_trade: {qty_to_close}")
 
     def process_pairs(self, pairs: List[str]) -> None:
         """Process multiple pairs in parallel."""

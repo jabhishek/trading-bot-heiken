@@ -9,10 +9,10 @@ SETTINGS = {
 
             "WHEAT_USD": {"granularity": "H1", "weight": 0.1, "short_only": True},
             "NATGAS_USD": {"granularity": "H1", "weight": 0.1, "short_only": True},
-            "SUGAR_USD": {"granularity": "H1", "weight": 0.1, "long_only": False},
+            "SUGAR_USD": {"granularity": "H1", "weight": 0.1, "short_only": True},
             "BCO_USD": {"granularity": "H1", "weight": 0.1, "long_only": True},
             "SOYBN_USD": {"granularity": "H1", "weight": 0.1, "short_only": False},
-            "CORN_USD": {"granularity": "H1", "weight": 0.1, "short_only": True},
+            "CORN_USD": {"granularity": "H1", "weight": 0.1, "long_only": True},
             "XAU_USD": {"granularity": "H1", "weight": 0.1},
 
             # "USD_CAD": {"granularity": "H1", "weight": 0.1},
@@ -23,7 +23,7 @@ SETTINGS = {
             #
             # "HKD_JPY": {"granularity": "H1", "weight": 0.1},
             # "SGD_JPY": {"granularity": "H1", "weight": 0.1},
-            # "GBP_JPY": {"granularity": "H1", "weight": 0.1},
+            "GBP_JPY": {"granularity": "H1", "weight": 0.1},
             # "NZD_JPY": {"granularity": "H1", "weight": 0.1},
             # #
             # "EUR_JPY": {"granularity": "H1", "weight": 0.1},
