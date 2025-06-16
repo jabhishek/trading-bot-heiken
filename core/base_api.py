@@ -113,13 +113,14 @@ class BaseAPI:
             print(f"Error fetching position for {instrument}: {e}")
             return None
 
-    def place_order(self, pair, use_limit, trade_qty: float, instrument, price, expiry, use_sl=False, stop_loss=None, take_profit=None, logger=no_op):
+    def place_order(self, pair, use_limit, trade_qty: float, instrument, price, expiry,
+                    use_sl=False, stop_loss=None, take_profit=None, logger=no_op, tag=None):
         if use_limit:
             self.oanda_api.place_limit_order(pair, trade_qty, price, expiry, instrument,
-                                       logger=logger, use_stop_loss=use_sl, fixed_sl=stop_loss, take_profit=take_profit)
+                                       logger=logger, use_stop_loss=use_sl, fixed_sl=stop_loss, take_profit=take_profit, tag=tag)
         else:
             self.oanda_api.place_trade(pair, trade_qty, instrument, logger=logger, use_stop_loss=use_sl,
-                                        fixed_sl=stop_loss, take_profit=take_profit)
+                                        fixed_sl=stop_loss, take_profit=take_profit, tag=tag)
 
 
     def calculate_indicators(self, df: pd.DataFrame, pair_config: PairConfig,

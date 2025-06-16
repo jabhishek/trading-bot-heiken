@@ -29,7 +29,7 @@ def get_net_bullish_strength(price_series, logger, steps_logger):
 
 
 def get_net_strength_for_row(current_price, net_trend_100, net_trend_200, net_trend_30, net_trend_50, sma_10,
-                             sma_100, sma_200, sma_30, sma_50, steps_logger=no_op, logger=no_op):
+                             sma_100, sma_200, sma_30, sma_50, trix_15, trix_9, steps_logger=no_op, logger=no_op):
     bullish_strength = 0
     bearish_strength = 0
     # sma_200
@@ -111,6 +111,21 @@ def get_net_strength_for_row(current_price, net_trend_100, net_trend_200, net_tr
     elif current_price < sma_30 and net_trend_30 < 0:
         steps_logger(f"bearish: current_price < sma_30 and net_trend_30 < 0")
         bearish_strength += INCREMENT
+
+    # trix
+    if trix_15 > 0:
+        steps_logger(f"bullish: trix_15 > 0")
+        bullish_strength += INCREMENT
+    elif trix_15 < 0:
+        steps_logger(f"bearish: trix_15 < 0")
+        bearish_strength += INCREMENT
+
+    if trix_9 > 0:
+        steps_logger(f"bullish: trix_9 > 0")
+        bullish_strength += INCREMENT
+    elif trix_9 < 0:
+        steps_logger(f"bearish: trix_9 < 0")
+        bearish_strength += INCREMENT
     logger(f"bullish_strength: {round(bullish_strength, 2)}, bearish_strength: {round(bearish_strength, 2)}")
     return bearish_strength, bullish_strength
 
@@ -127,7 +142,7 @@ def compute_strength(row):
             row['sma_100'],
             row['sma_200'],
             row['sma_30'],
-            row['sma_50']
+            row['sma_50'], row["trix_15"], row["trix_9"],
         ),
         index=['bearish_strength', 'bullish_strength']
     )

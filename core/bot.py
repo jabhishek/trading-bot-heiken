@@ -14,6 +14,7 @@ from core.candle_manager import CandleManager
 from core.log_wrapper import LogManager
 from core.pair_config import PairConfig
 from indicators.rsi import get_rsi
+from indicators.trix import calculate_trix, convert_series_to_signals
 from models.TradeSettings import TradeSettings
 from models.instrument_data import InstrumentData
 from models.open_trade import OpenTrade
@@ -217,7 +218,7 @@ class Bot:
                         use_limit_order = not is_acceptable_spread
                         self.base_api.place_order(pair, use_limit_order, qty, instrument, live_price,
                                                   get_expiry(pair_config.granularity), use_sl=True,
-                                                  stop_loss=sl_price, take_profit=None, logger=self.logger.log_message)
+                                                  stop_loss=sl_price, take_profit=None, logger=self.logger.log_message, tag=f"strength_{net_strength}")
                     else:
                         rejected_logger(
                             f"ideal_qty is 0, not placing trade. ideal_qty: {round(ideal_qty, 2)}, net_strength: {net_strength}, trigger: {trigger}")
@@ -263,7 +264,7 @@ class Bot:
                             self.base_api.place_order(pair, use_limit_order, additional_qty, instrument, live_price,
                                                       get_expiry(pair_config.granularity), use_sl=True,
                                                       stop_loss=sl_price, take_profit=None,
-                                                      logger=self.logger.log_message)
+                                                      logger=self.logger.log_message, tag=f"strength_{net_strength}")
                         else:
                             pair_logger(
                                 f"spare_qty is 0, not placing additional trade. ideal_qty: {round(ideal_qty, 2)}, spare_qty: {round(spare_qty, 2)}, current_units: {round(current_units, 2)}, trigger: {trigger}")
@@ -294,6 +295,16 @@ class Bot:
             pass
 
     def get_net_strength(self, candles, pair_logger):
+
+        candles["trix_9"] = calculate_trix(candles["mid_c"], 9)
+        candles["trix_9"] = convert_series_to_signals(candles["trix_9"])
+
+        candles["trix_15"] = calculate_trix(candles["mid_c"], 15)
+        candles["trix_15"] = convert_series_to_signals(candles["trix_15"])
+
+        pair_logger(f"trix_9: {np.array(candles['trix_9'].tail(10))}")
+        pair_logger(f"trix_15: {np.array(candles['trix_15'].tail(10))}")
+
         candles["sma_200"] = candles["mid_c"].rolling(window=200).mean()
         candles["sma_100"] = candles["mid_c"].rolling(window=100).mean()
         candles["sma_50"] = candles["mid_c"].rolling(window=50).mean()
@@ -312,17 +323,18 @@ class Bot:
         candles['bullish_strength_s'] = candles['bullish_strength'].ewm(span=10, adjust=False).mean()
         candles['net_strength'] = candles['bullish_strength'] - candles['bearish_strength']
         candles['net_strength_s'] = candles['bullish_strength_s'] - candles['bearish_strength_s']
+        candles['net_strength_s'] = round(candles['net_strength_s'], 2)
 
         bullish_strength = candles['bullish_strength_s'].iloc[-1]
         bearish_strength = candles['bearish_strength_s'].iloc[-1]
         net_strength = bullish_strength - bearish_strength
 
-        pair_logger(f"bearish_strength: {np.array(round(candles['bearish_strength'].tail(10), 2))}")
-        pair_logger(f"bullish_strength: {np.array(round(candles['bullish_strength'].tail(10), 2))}")
-        pair_logger(f"bearish_strength smoothed: {np.array(round(candles['bearish_strength_s'].tail(10), 2))}")
-        pair_logger(f"bullish_strength smoothed: {np.array(round(candles['bullish_strength_s'].tail(10), 2))}")
+        # pair_logger(f"bearish_strength: {np.array(round(candles['bearish_strength'].tail(10), 2))}")
+        # pair_logger(f"bullish_strength: {np.array(round(candles['bullish_strength'].tail(10), 2))}")
+        # pair_logger(f"bearish_strength smoothed: {np.array(round(candles['bearish_strength_s'].tail(10), 2))}")
+        # pair_logger(f"bullish_strength smoothed: {np.array(round(candles['bullish_strength_s'].tail(10), 2))}")
         pair_logger(f"net_strength: {np.array(round(candles['net_strength'].tail(10), 2))}")
-        pair_logger(f"net_strength smoothed: {np.array(round(candles['net_strength_s'].tail(10), 2))}")
+        pair_logger(f"net_strength smoothed: {np.array(candles['net_strength_s'].tail(10))}")
         return net_strength, net_trend_30
 
     def get_trade_qty(self, base_qty, spare_qty, pair_logger):
@@ -359,18 +371,18 @@ class Bot:
             updated_sl = min(new_fixed_sl, current_sl_price)
         return current_sl_price, updated_sl
 
-    def check_close_trades(self, pair, candles, pair_config: PairConfig, instrument: InstrumentData,
-                           ex_rate: float, pair_logger, current_price: float, trigger: int, trade_logger,
-                           trades: List[OpenTrade]):
-        atr = candles.iloc[-1][ATR_KEY]
-        for t in trades:
-            qty_to_close = self.strategy_manager.check_for_closing_trade(t, ex_rate, atr, trigger, pair_logger)
-
-            if qty_to_close != 0:
-                self.base_api.place_order(pair, True, qty_to_close, instrument, current_price,
-                                          get_expiry(pair_config.granularity), use_sl=False,
-                                          logger=self.logger.log_message)
-                trade_logger(f"book profit - trigger: {trigger}, qty_to_trade: {qty_to_close}")
+    # def check_close_trades(self, pair, candles, pair_config: PairConfig, instrument: InstrumentData,
+    #                        ex_rate: float, pair_logger, current_price: float, trigger: int, trade_logger,
+    #                        trades: List[OpenTrade]):
+    #     atr = candles.iloc[-1][ATR_KEY]
+    #     for t in trades:
+    #         qty_to_close = self.strategy_manager.check_for_closing_trade(t, ex_rate, atr, trigger, pair_logger)
+    #
+    #         if qty_to_close != 0:
+    #             self.base_api.place_order(pair, True, qty_to_close, instrument, current_price,
+    #                                       get_expiry(pair_config.granularity), use_sl=False,
+    #                                       logger=self.logger.log_message)
+    #             trade_logger(f"book profit - trigger: {trigger}, qty_to_trade: {qty_to_close}")
 
     def process_pairs(self, pairs: List[str]) -> None:
         """Process multiple pairs in parallel."""
@@ -391,7 +403,7 @@ class Bot:
 
         try:
             self.logger.log_to_main("Starting main loop")
-            self.process_pairs(self.trading_pairs)
+            # self.process_pairs(self.trading_pairs)
 
             while True:
                 try:
@@ -400,15 +412,19 @@ class Bot:
                     tm_min = time.localtime().tm_min
                     tm_sec = time.localtime().tm_sec
 
-                    if tm_sec % 5 < 2:
-                        print(f"---- {tm_mday} {tm_hour}:{tm_min}:{tm_sec}")
-                        # Check for new candles
+                    if tm_sec % 5 < 2 and tm_min % 5 < 2:
+                        print(f"---- {tm_mday} {tm_hour}:{tm_min}:{tm_sec} - {tm_min % 5} - updating timings")
                         pairs_with_new_candles: List[str] = self.candle_manager.update_timings()
 
                         if pairs_with_new_candles:
                             self.logger.log_to_main(f"Processing pairs with new candles: {pairs_with_new_candles}")
                             self.process_pairs(pairs_with_new_candles)
-
+                    # elif tm_min % 5 == 2 and tm_sec == 30:
+                    #     print(f"---- {tm_mday} {tm_hour}:{tm_min}:{tm_sec} - {tm_min % 5} - processing all pairs")
+                    #     self.process_pairs(self.trading_pairs)
+                    #     pass
+                    else:
+                        print(f"---- {tm_mday} {tm_hour}:{tm_min}:{tm_sec} - {tm_min % 5}")
                     time.sleep(self.polling_period)
 
                 except Exception as e:

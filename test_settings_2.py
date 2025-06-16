@@ -1,17 +1,17 @@
 SETTINGS = {
     "pairs":
         {
-            "USD_JPY": {"granularity": "H1", "weight": 0.1},
-            "EUR_USD": {"granularity": "H1", "weight": 0.1},
-            "GBP_USD": {"granularity": "H1", "weight": 0.1},
+            "USD_JPY": {"granularity": "M15", "weight": 0.1},
+            "EUR_USD": {"granularity": "M15", "weight": 0.1},
+            "GBP_USD": {"granularity": "M15", "weight": 0.1},
             "SPX500_USD": {"granularity": "H1", "weight": 0.1},
             "CH20_CHF": {"granularity": "H1", "weight": 0.1},
 
             "WHEAT_USD": {"granularity": "H1", "weight": 0.1, "short_only": True},
             "NATGAS_USD": {"granularity": "H1", "weight": 0.1, "short_only": True},
-            "SUGAR_USD": {"granularity": "H1", "weight": 0.1, "long_only": True},
+            "SUGAR_USD": {"granularity": "H1", "weight": 0.1, "long_only": False},
             "BCO_USD": {"granularity": "H1", "weight": 0.1, "long_only": True},
-            "SOYBN_USD": {"granularity": "H1", "weight": 0.1, "short_only": True},
+            "SOYBN_USD": {"granularity": "H1", "weight": 0.1, "short_only": False},
             "CORN_USD": {"granularity": "H1", "weight": 0.1, "short_only": True},
             "XAU_USD": {"granularity": "H1", "weight": 0.1},
 
@@ -32,7 +32,6 @@ SETTINGS = {
             # "NAS100_USD": {"granularity": "H1", "weight": 0.1},
 
             "CN50_USD": {"granularity": "H1", "weight": 0.1},
-            # "XAU_USD": {"granularity": "H1", "weight": 0.1},
             'XCU_USD': {'granularity': 'H1', 'weight': 0.1},
             # #
             #

@@ -176,7 +176,7 @@ class OandaApi:
 
     def place_trade(self, pair_name: str, units: float, instrument,
                     fixed_sl: float = None, use_stop_loss: bool = False,
-                    trailing_stop_gap: float = None, logger=None, take_profit=None):
+                    trailing_stop_gap: float = None, logger=None, take_profit=None, tag=None):
 
         url = f"accounts/{self.account_id}/orders"
         units = get_round_qty(units, instrument.tradeUnitsPrecision)
@@ -190,6 +190,8 @@ class OandaApi:
                 units=str(units),
                 instrument=pair_name,
                 type="MARKET",
+                tradeClientExtensions=dict(id=f"market_order_{pair_name}_{units}", tag=tag if tag is not None else "market_order",
+                                  comment="Market Order"),
             )
 
         if use_stop_loss and trailing_stop_gap:
@@ -223,7 +225,7 @@ class OandaApi:
 
     def place_limit_order(self, pair_name: str, units: float, price: float, expire_in_seconds: float,
                           instrument, fixed_sl: float = None, use_stop_loss: bool = False,
-                          trailing_stop_gap: float = None, take_profit=None, logger=None):
+                          trailing_stop_gap: float = None, take_profit=None, logger=None, tag=None):
 
         url = f"accounts/{self.account_id}/orders"
 
@@ -243,6 +245,8 @@ class OandaApi:
             price=str(price),
             timeInForce="GTD",
             gtdTime=expiry,
+            tradeClientExtensions=dict(id=f"limit_order_{pair_name}_{units}_{price}",
+                                       tag=tag if tag is not None else "limit_order", comment="Limit Order"),
         )
 
         if use_stop_loss and trailing_stop_gap:
