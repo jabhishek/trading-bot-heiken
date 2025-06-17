@@ -24,15 +24,14 @@ class StrategyManager:
         streak: int = last_ha_candle.ha_streak
         trigger: bool = np.abs(streak) <= HEIKEN_ASHI_STREAK and last_ha_candle.ha_open_at_extreme == 1
         logger(f"streak: {streak}, trigger: {trigger}")
-        return np.sign(streak) if trigger else 0
-        # return np.sign(streak)
+        # return np.sign(streak) if trigger else 0
+        return np.sign(streak)
 
     def _check_for_trading_condition(
             self,
             signal: int,
             rejected_logger: Callable[[str], None],
             pair_config: PairConfig,
-            sma_trend_30: int,
             rsi: float, net_strength: float
     ) -> int:
         if signal == 1 and pair_config.short_only:
@@ -61,7 +60,6 @@ class StrategyManager:
             trigger: int,
             rejected_logger: Callable[[str], None],
             pair_config: PairConfig,
-            sma_trend_30: int,
             rsi: float,
             net_strength: float
     ) -> bool:
@@ -69,7 +67,6 @@ class StrategyManager:
             trigger,
             rejected_logger,
             pair_config=pair_config,
-            sma_trend_30=sma_trend_30,
             rsi=rsi,
             net_strength=net_strength
         )
