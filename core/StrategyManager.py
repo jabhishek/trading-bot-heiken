@@ -24,8 +24,8 @@ class StrategyManager:
         streak: int = last_ha_candle.ha_streak
         trigger: bool = np.abs(streak) <= HEIKEN_ASHI_STREAK and last_ha_candle.ha_open_at_extreme == 1
         logger(f"streak: {streak}, trigger: {trigger}")
-        # return np.sign(streak) if trigger else 0
-        return np.sign(streak)
+        return np.sign(streak) if trigger else 0
+        # return np.sign(streak)
 
     def _check_for_trading_condition(
             self,

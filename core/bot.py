@@ -24,6 +24,13 @@ from utils.heiken_ashi import ohlc_to_heiken_ashi
 from utils.net_sma_trend import get_net_trend
 from utils.net_strength import compute_strength
 
+HIGHER_GRAN_MAPPING = {
+    "M5": "H1",
+    "M15": "H4",
+    "H1": "H4",
+    "H4": "D",
+}
+
 def get_additional_qty(ideal_qty: float, current_position: float) -> float:
     if np.sign(ideal_qty) != np.sign(current_position):
         return 0
@@ -56,42 +63,42 @@ def get_ideal_qty(base_qty, net_strength) -> float:
 
 def get_net_strength(candles, pair_logger):
 
-    candles["trix_9"] = calculate_trix(candles["mid_c"], 9)
-    candles["trix_9"] = convert_series_to_signals(candles["trix_9"])
-
-    candles["trix_15"] = calculate_trix(candles["mid_c"], 15)
-    candles["trix_15"] = convert_series_to_signals(candles["trix_15"])
-
-    pair_logger(f"trix_9: {np.array(candles['trix_9'].tail(10))}")
-    pair_logger(f"trix_15: {np.array(candles['trix_15'].tail(10))}")
-
-    candles["sma_200"] = candles["mid_c"].rolling(window=200).mean()
-    candles["sma_100"] = candles["mid_c"].rolling(window=100).mean()
-    candles["sma_50"] = candles["mid_c"].rolling(window=50).mean()
-    candles["sma_30"] = candles["mid_c"].rolling(window=30).mean()
-    candles["sma_10"] = candles["mid_c"].rolling(window=10).mean()
-
-    candles["net_trend_200"] = get_net_trend(candles["mid_c"], 200)
-    candles["net_trend_100"] = get_net_trend(candles["mid_c"], 100)
-    candles["net_trend_50"] = get_net_trend(candles["mid_c"], 50)
-    candles["net_trend_30"] = get_net_trend(candles["mid_c"], 30)
-    # net_trend_30: int = candles["net_trend_30"].iloc[-1]
-
-    candles[['bearish_strength', 'bullish_strength']] = candles.apply(compute_strength, axis=1)
-
-    candles['bearish_strength_s'] = candles['bearish_strength'].ewm(span=10, adjust=False).mean()
-    candles['bullish_strength_s'] = candles['bullish_strength'].ewm(span=10, adjust=False).mean()
-    candles['net_strength'] = candles['bullish_strength'] - candles['bearish_strength']
-    candles['net_strength_s'] = candles['bullish_strength_s'] - candles['bearish_strength_s']
-    candles['net_strength_s'] = round(candles['net_strength_s'], 2)
+    candles = get_net_strength_series(candles, pair_logger)
 
     bullish_strength = candles['bullish_strength_s'].iloc[-1]
     bearish_strength = candles['bearish_strength_s'].iloc[-1]
     net_strength = bullish_strength - bearish_strength
 
+    return net_strength
+
+
+def get_net_strength_series(candles, pair_logger):
+    candles["trix_9"] = calculate_trix(candles["mid_c"], 9)
+    candles["trix_9"] = convert_series_to_signals(candles["trix_9"])
+    candles["trix_15"] = calculate_trix(candles["mid_c"], 15)
+    candles["trix_15"] = convert_series_to_signals(candles["trix_15"])
+    pair_logger(f"trix_9: {np.array(candles['trix_9'].tail(10))}")
+    pair_logger(f"trix_15: {np.array(candles['trix_15'].tail(10))}")
+    candles["sma_200"] = candles["mid_c"].rolling(window=200).mean()
+    candles["sma_100"] = candles["mid_c"].rolling(window=100).mean()
+    candles["sma_50"] = candles["mid_c"].rolling(window=50).mean()
+    candles["sma_30"] = candles["mid_c"].rolling(window=30).mean()
+    candles["sma_10"] = candles["mid_c"].rolling(window=10).mean()
+    candles["net_trend_200"] = get_net_trend(candles["mid_c"], 200)
+    candles["net_trend_100"] = get_net_trend(candles["mid_c"], 100)
+    candles["net_trend_50"] = get_net_trend(candles["mid_c"], 50)
+    candles["net_trend_30"] = get_net_trend(candles["mid_c"], 30)
+    # net_trend_30: int = candles["net_trend_30"].iloc[-1]
+    candles[['bearish_strength', 'bullish_strength']] = candles.apply(compute_strength, axis=1)
+    candles['bearish_strength_s'] = candles['bearish_strength'].ewm(span=10, adjust=False).mean()
+    candles['bullish_strength_s'] = candles['bullish_strength'].ewm(span=10, adjust=False).mean()
+    candles['net_strength'] = candles['bullish_strength'] - candles['bearish_strength']
+    candles['net_strength_s'] = candles['bullish_strength_s'] - candles['bearish_strength_s']
+    candles['net_strength_s'] = round(candles['net_strength_s'], 2)
     pair_logger(f"net_strength: {np.array(round(candles['net_strength'].tail(10), 2))}")
     pair_logger(f"net_strength smoothed: {np.array(candles['net_strength_s'].tail(10))}")
-    return net_strength
+
+    return candles.copy()
 
 
 class Bot:
@@ -183,6 +190,22 @@ class Bot:
             # Calculate indicators
             candles = self.base_api.calculate_indicators(candles, pair_config, pair_logger)
 
+            # higher granularity trend
+            higher_granularity: str = HIGHER_GRAN_MAPPING.get(pair_config.granularity, pair_config.granularity)
+            higher_candles: Optional[pd.DataFrame] = self.api_client.get_candles_df(
+                pair,
+                completed_only=True,
+                granularity=higher_granularity,
+                count=5000
+            )
+            if higher_candles is None or higher_candles.empty:
+                self.logger.log_to_error(f"No higher granularity candles found for {pair} with granularity {higher_granularity}")
+                return
+
+            pair_logger(f"Higher granularity: {higher_granularity}")
+            higher_net_strength = get_net_strength(higher_candles, pair_logger)
+            pair_logger(f"Higher net_strength: {round(higher_net_strength, 2)}")
+
             net_strength = get_net_strength(candles, pair_logger)
             pair_logger(f"net_strength: {round(net_strength, 2)}")
 
@@ -199,10 +222,11 @@ class Bot:
                                                                                        net_strength, pair, pair_logger)
 
             # get spread
-            current_spread, spread_threshold, bid, ask = get_spread_threshold(pair, candles, self.api_client,
+            current_spread, spread_threshold, bid, ask, mid = get_spread_threshold(pair, candles, self.api_client,
                                                                                 pair_logger)
             bid_price = round(bid, abs(instrument.pipLocationPrecision))
             ask_price = round(ask, abs(instrument.pipLocationPrecision))
+            mid_price = round(mid, abs(instrument.pipLocationPrecision))
             pair_logger(f"bid_price: {bid_price:.5f}, ask_price: {ask_price}, last_close: {last_close:.5f}")
 
             is_acceptable_spread = current_spread <= spread_threshold
@@ -239,7 +263,7 @@ class Bot:
                         f"Trade not initiated - can_trade: {can_trade}, trigger: {trigger}, net_strength: {net_strength}, rsi: {rsi:.2f}")
 
             if qty_to_sell != 0:
-                limit_price = bid_price if qty_to_sell > 0 else ask_price
+                limit_price = mid_price
                 last_ha_candle = heikin_ashi.iloc[-1]
                 streak: int = last_ha_candle.ha_streak
                 should_check_for_reduce = np.sign(streak) != np.sign(current_units)
@@ -264,7 +288,7 @@ class Bot:
         pair_logger(
             f"leverage_ratio: {leverage_ratio}, max_gbp_exposure: {max_gbp_exposure:.2f}, ex_rate: {ex_rate:.5f}, max_currency_exposure: {max_currency_exposure:.2f}")
         base_qty = (max_currency_exposure / last_close) * 1
-        min_qty = 0.1 * base_qty
+        min_qty = 0.15 * base_qty
         ideal_qty: float = get_ideal_qty(base_qty, net_strength)
         spare_qty: float = ideal_qty if current_units == 0 else get_additional_qty(ideal_qty, current_units)
         qty_to_sell = 0 if current_units == 0 else get_reduce_qty(ideal_qty, current_units, pair_logger)
